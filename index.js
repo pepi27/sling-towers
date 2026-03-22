@@ -1,24 +1,24 @@
 // ============================================================
 //  TOWER SIEGE — Tower Defense + Skill Shot  (Pixi.js v7)
 // ============================================================
-const W = 1280,
-    H = 720;
+const W = 720,
+    H = 1280;
 const GRAVITY = 820;
-const SHOP_H = 80;
+const SHOP_H = 145;
 
-const ZOOM   = 1.18;                        // gameplay zoom factor
-const WL_CX  = W / 2;                       // worldLayer pivot x
-const WL_CY  = (H - SHOP_H) / 2;           // worldLayer pivot y (centre of play area)
+const ZOOM = 1.0; // no extra zoom needed in portrait
+const WL_CX = W / 2; // worldLayer pivot x
+const WL_CY = (H - SHOP_H) / 2; // worldLayer pivot y (centre of play area)
 
-// Curved enemy path — control points for Catmull-Rom spline
+// Curved enemy path — control points for Catmull-Rom spline (portrait: top→bottom)
 const PATH_CTRL = [
-    { x: 1340, y: 330 },
-    { x: 1080, y: 170 },
-    { x:  820, y: 400 },
-    { x:  580, y: 170 },
-    { x:  340, y: 400 },
-    { x:  160, y: 265 },
-    { x:   90, y: 355 },
+    { x: 360, y: -30 }, // enter top-center
+    { x: 130, y: 220 }, // curve left
+    { x: 560, y: 430 }, // curve right
+    { x: 150, y: 650 }, // curve left
+    { x: 570, y: 870 }, // curve right
+    { x: 240, y: 1050 }, // curve left
+    { x: 360, y: 1110 }, // arrive at base (bottom-center)
 ];
 // Generate dense smooth path from Catmull-Rom control points
 function buildPathPts(ctrl, segs) {
@@ -29,10 +29,22 @@ function buildPathPts(ctrl, segs) {
         const p2 = ctrl[i + 1];
         const p3 = ctrl[Math.min(ctrl.length - 1, i + 2)];
         for (let s = 0; s < segs; s++) {
-            const t = s / segs, t2 = t * t, t3 = t2 * t;
+            const t = s / segs,
+                t2 = t * t,
+                t3 = t2 * t;
             out.push({
-                x: 0.5 * (2*p1.x + (-p0.x+p2.x)*t + (2*p0.x-5*p1.x+4*p2.x-p3.x)*t2 + (-p0.x+3*p1.x-3*p2.x+p3.x)*t3),
-                y: 0.5 * (2*p1.y + (-p0.y+p2.y)*t + (2*p0.y-5*p1.y+4*p2.y-p3.y)*t2 + (-p0.y+3*p1.y-3*p2.y+p3.y)*t3),
+                x:
+                    0.5 *
+                    (2 * p1.x +
+                        (-p0.x + p2.x) * t +
+                        (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 +
+                        (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3),
+                y:
+                    0.5 *
+                    (2 * p1.y +
+                        (-p0.y + p2.y) * t +
+                        (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 +
+                        (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3),
             });
         }
     }
@@ -40,9 +52,9 @@ function buildPathPts(ctrl, segs) {
     return out;
 }
 const PATH_PTS = buildPathPts(PATH_CTRL, 20); // ~120 smooth points
-const PATH_WIDTH = 54;          // visual half-width of road
+const PATH_WIDTH = 54; // visual half-width of road
 const MIN_TOWER_PATH_DIST = 80; // can't place this close to path center
-const MIN_TOWER_TOWER_DIST = 65;// can't place this close to another tower
+const MIN_TOWER_TOWER_DIST = 65; // can't place this close to another tower
 
 // ── Type constants ─────────────────────────────────────────────
 const TOWER = { ARCHER: 'archer', CANNON: 'cannon', RAPID: 'rapid', ICE: 'ice', FIRE: 'fire' };
@@ -58,10 +70,10 @@ const STATUS = { SLOW: 'slow', BURN: 'burn' };
 const PHASE = { BUILD: 'build', WAVE: 'wave' };
 
 // Main slingshot (left side)
-const SL_ANCHOR = { x: 190, y: 498 };
-const SL_FORK_L = { x: 168, y: 455 };
-const SL_FORK_R = { x: 212, y: 455 };
-const MAX_PULL = 88;
+const SL_ANCHOR = { x: 180, y: 700 };
+const SL_FORK_L = { x: 158, y: 658 };
+const SL_FORK_R = { x: 202, y: 658 };
+const MAX_PULL = 300;
 const LAUNCH_SPD = 1100;
 const SLOW_SCALE = 0.11;
 const SL_SHOT_CD = 0.45; // slingshot recharge
@@ -92,7 +104,7 @@ const TDEFS = {
         pColor: 0x334455,
         pSize: 18,
         recharge: 3.0,
-        aoe: 90,
+        aoe: 55,
         status: null,
         label: '130g · 4dmg · AoE · 3s',
     },
@@ -147,8 +159,8 @@ const UPGRADE_DEFS = {
         { cost: 85, dmg: 3.5, recharge: 0.9, pSize: 16, label: 'Lv3: +dmg max speed' },
     ],
     [TOWER.CANNON]: [
-        { cost: 100, dmg: 7, aoe: 115, recharge: 2.6, label: 'Lv2: +dmg +blast' },
-        { cost: 170, dmg: 12, aoe: 150, recharge: 2.0, label: 'Lv3: mega blast' },
+        { cost: 100, dmg: 7, aoe: 75, recharge: 2.6, label: 'Lv2: +dmg +blast' },
+        { cost: 170, dmg: 12, aoe: 100, recharge: 2.0, label: 'Lv3: mega blast' },
     ],
     [TOWER.RAPID]: [
         { cost: 55, dmg: 0.8, recharge: 0.45, pSize: 9, label: 'Lv2: +dmg faster' },
@@ -337,6 +349,7 @@ const slowOverlay = document.getElementById('slow-overlay');
 // Layers
 const worldLayer = new PIXI.Container();
 const bgLayer = new PIXI.Container();
+const terrainLayer = new PIXI.Container(); // path, trees, fort — zooms with worldLayer
 const slotLayer = new PIXI.Container();
 const towerLayer = new PIXI.Container();
 const enemyLayer = new PIXI.Container();
@@ -346,11 +359,11 @@ const fxLayer = new PIXI.Container();
 const aimLayer = new PIXI.Container();
 const uiLayer = new PIXI.Container();
 
-// bgLayer is NOT inside worldLayer — keeps background full-size and un-zoomed
+// bgLayer holds only solid background — un-zoomed, no edge gaps
 app.stage.addChild(bgLayer);
 app.stage.addChild(worldLayer);
-[slotLayer, towerLayer, enemyLayer, coinLayer, projLayer, fxLayer, aimLayer].forEach((l) =>
-    worldLayer.addChild(l),
+[terrainLayer, slotLayer, towerLayer, enemyLayer, coinLayer, projLayer, fxLayer, aimLayer].forEach(
+    (l) => worldLayer.addChild(l),
 );
 app.stage.addChild(uiLayer);
 
@@ -365,65 +378,112 @@ app.stage.hitArea = new PIXI.Rectangle(0, 0, W, H);
 
 // ── Background ────────────────────────────────────────────────
 (function drawBG() {
-    // Sky + ground fill
+    // ── Solid background in bgLayer (un-zoomed, fills canvas) ──
     const g = new PIXI.Graphics();
-    g.beginFill(0x0a1406); g.drawRect(0, 0, W, H); g.endFill();
-    g.beginFill(0x163a0c); g.drawRect(0, 140, W, H - 140 - SHOP_H); g.endFill();
-    g.beginFill(0x08080f); g.drawRect(0, H - SHOP_H, W, SHOP_H); g.endFill();
-    g.lineStyle(1, 0x333355, 0.8); g.moveTo(0, H - SHOP_H); g.lineTo(W, H - SHOP_H);
+    g.beginFill(0x0a1406);
+    g.drawRect(0, 0, W, H);
+    g.endFill();
+    g.beginFill(0x1a4a0e);
+    g.drawRect(0, 0, W, H - SHOP_H);
+    g.endFill();
+    for (let i = 0; i < 50; i++) {
+        g.beginFill(0x155a0a, 0.4 + Math.random() * 0.3);
+        g.drawEllipse(
+            Math.random() * W,
+            Math.random() * (H - SHOP_H),
+            40 + Math.random() * 60,
+            20 + Math.random() * 30,
+        );
+        g.endFill();
+    }
+    g.beginFill(0x08080f);
+    g.drawRect(0, H - SHOP_H, W, SHOP_H);
+    g.endFill();
+    g.lineStyle(1, 0x333355, 0.8);
+    g.moveTo(0, H - SHOP_H);
+    g.lineTo(W, H - SHOP_H);
     bgLayer.addChild(g);
 
-    // Stars
-    for (let i = 0; i < 90; i++) {
-        const s = new PIXI.Graphics();
-        s.beginFill(0xffffff, Math.random() * 0.55 + 0.15);
-        s.drawCircle(0, 0, Math.random() * 1.1 + 0.3); s.endFill();
-        s.x = Math.random() * W; s.y = Math.random() * 160;
-        bgLayer.addChild(s);
-    }
+    // ── Path, trees, fort in terrainLayer (zooms with worldLayer) ──
 
-    // Curved dirt path — shadow, body, highlight
+    // Dirt path
     const drawPathLine = (width, color, alpha) => {
         const pg = new PIXI.Graphics();
         pg.lineStyle({ width, color, alpha, join: 'round', cap: 'round' });
         pg.moveTo(PATH_PTS[0].x, PATH_PTS[0].y);
         for (let i = 1; i < PATH_PTS.length; i++) pg.lineTo(PATH_PTS[i].x, PATH_PTS[i].y);
-        bgLayer.addChild(pg);
+        terrainLayer.addChild(pg);
     };
-    drawPathLine(PATH_WIDTH + 14, 0x3a2008, 0.5);  // shadow
-    drawPathLine(PATH_WIDTH,      0x8a6420, 1.0);  // main road
-    drawPathLine(PATH_WIDTH * 0.35, 0xaa7e2a, 0.55); // centre highlight
+    drawPathLine(60, 0x3a2008, 0.5);
+    drawPathLine(48, 0x8a6420, 1.0);
+    drawPathLine(18, 0xaa7e2a, 0.45);
 
-    // Scatter trees (not drawn on path — random positions in grassland)
-    const treePositions = [
-        [220,110],[420,90],[650,100],[880,95],[1100,105],
-        [180,480],[380,490],[620,470],[860,485],[1080,475],
-        [280,200],[750,185],[1000,210],[460,430],[950,450],
+    // Scattered trees — skip any too close to the path
+    const treeXY = [
+        [50, 70],
+        [660, 80],
+        [45, 280],
+        [665, 310],
+        [50, 490],
+        [660, 530],
+        [48, 710],
+        [660, 740],
+        [50, 930],
+        [650, 900],
+        [52, 1080],
+        [645, 1050],
+        [110, 160],
+        [600, 190],
+        [115, 590],
+        [595, 620],
+        [105, 820],
+        [590, 790],
+        [180, 380],
+        [530, 400],
+        [200, 980],
+        [510, 960],
     ];
-    treePositions.forEach(([tx, ty]) => {
+    treeXY.forEach(([tx, ty]) => {
+        if (distToPath(tx, ty) < 100) return; // don't place on path
         const t = new PIXI.Graphics();
-        t.beginFill(0x1e5010); t.drawPolygon([0,-38,22,0,-22,0]); t.endFill();
-        t.beginFill(0x164010); t.drawPolygon([0,-60,16,-18,-16,-18]); t.endFill();
-        t.beginFill(0x3c2010); t.drawRect(-5,0,10,18); t.endFill();
-        t.x = tx; t.y = ty;
-        bgLayer.addChild(t);
+        t.beginFill(0x0a1a06, 0.5);
+        t.drawCircle(4, 5, 22);
+        t.endFill();
+        t.beginFill(0x1e5010);
+        t.drawCircle(0, 0, 20);
+        t.endFill();
+        t.beginFill(0x2a7018);
+        t.drawCircle(-4, -4, 13);
+        t.endFill();
+        t.beginFill(0x3a8020);
+        t.drawCircle(3, -6, 8);
+        t.endFill();
+        t.x = tx;
+        t.y = ty;
+        terrainLayer.addChild(t);
     });
 
-    // Castle at path end
-    const bx = PATH_CTRL[PATH_CTRL.length - 1].x;
-    const by = PATH_CTRL[PATH_CTRL.length - 1].y;
-    const c = new PIXI.Graphics();
-    c.beginFill(0x3a3a55); c.drawRect(bx - 44, by - 95, 88, 138); c.endFill();
-    for (let i = 0; i < 5; i++) {
-        c.beginFill(0x4a4a66); c.drawRect(bx - 44 + i * 18, by - 113, 12, 22); c.endFill();
+    // Base fort at path end
+    const ep = PATH_CTRL[PATH_CTRL.length - 1];
+    const fort = new PIXI.Graphics();
+    fort.beginFill(0x222233);
+    fort.drawCircle(ep.x, ep.y, 42);
+    fort.endFill();
+    fort.lineStyle(4, 0x5566aa, 0.9);
+    fort.drawCircle(ep.x, ep.y, 42);
+    fort.beginFill(0x3a3a55);
+    fort.drawCircle(ep.x, ep.y, 30);
+    fort.endFill();
+    fort.beginFill(0xee2222, 0.9);
+    fort.drawCircle(ep.x, ep.y, 8);
+    fort.endFill();
+    for (let a = 0; a < 8; a++) {
+        const ang = (a / 8) * Math.PI * 2;
+        fort.beginFill(0x4a4a66);
+        fort.drawCircle(ep.x + Math.cos(ang) * 42, ep.y + Math.sin(ang) * 42, 7);
+        fort.endFill();
     }
-    c.beginFill(0x1a1a28); c.drawRect(bx - 14, by + 5, 28, 38); c.endFill();
-    c.beginFill(0x5577aa, 0.7); c.drawRect(bx - 8, by + 11, 10, 10); c.endFill();
-    const flag = new PIXI.Graphics();
-    flag.beginFill(0xee2222); flag.drawPolygon([0,0,22,-14,0,-28]); flag.endFill();
-    flag.lineStyle(2, 0x888888); flag.moveTo(0,0); flag.lineTo(0,-34);
-    flag.x = bx - 44; flag.y = by - 113;
-    bgLayer.addChild(c); bgLayer.addChild(flag);
+    terrainLayer.addChild(fort);
 })();
 
 // ── Placement ghost preview ────────────────────────────────────
@@ -433,18 +493,24 @@ let ghostPos = null; // world coords of current hover position
 
 function updateGhost(wx, wy) {
     ghostGfx.clear();
-    if (phase !== PHASE.BUILD || isAiming || gameOver) { ghostPos = null; return; }
+    if (phase !== PHASE.BUILD || isAiming || gameOver) {
+        ghostPos = null;
+        return;
+    }
     ghostPos = { x: wx, y: wy };
     const valid = canPlaceTower(wx, wy);
     const canAfford = gold >= TDEFS[selectedType].cost;
     const ok = valid && canAfford;
     ghostGfx.lineStyle(2, ok ? 0x88ff44 : 0xff3322, 0.9);
     ghostGfx.beginFill(ok ? 0x44aa22 : 0xff2200, 0.22);
-    ghostGfx.drawCircle(wx, wy, 28); ghostGfx.endFill();
+    ghostGfx.drawCircle(wx, wy, 28);
+    ghostGfx.endFill();
     if (!valid) {
         ghostGfx.lineStyle(2.5, 0xff3322, 0.9);
-        ghostGfx.moveTo(wx - 12, wy - 12); ghostGfx.lineTo(wx + 12, wy + 12);
-        ghostGfx.moveTo(wx + 12, wy - 12); ghostGfx.lineTo(wx - 12, wy + 12);
+        ghostGfx.moveTo(wx - 12, wy - 12);
+        ghostGfx.lineTo(wx + 12, wy + 12);
+        ghostGfx.moveTo(wx + 12, wy - 12);
+        ghostGfx.lineTo(wx - 12, wy + 12);
     }
 }
 
@@ -463,9 +529,9 @@ const livesTxt = new PIXI.Text('', hudStyle);
 const waveTxt = new PIXI.Text('', hudStyle);
 goldTxt.x = 14;
 goldTxt.y = 10;
-livesTxt.x = 200;
-livesTxt.y = 10;
-waveTxt.x = 380;
+livesTxt.x = 14;
+livesTxt.y = 36;
+waveTxt.x = W / 2;
 waveTxt.y = 10;
 uiLayer.addChild(goldTxt, livesTxt, waveTxt);
 
@@ -491,7 +557,7 @@ waveBtnTxt.anchor.set(0.5);
 waveBtnTxt.x = 0;
 waveBtnTxt.y = 0;
 waveBtn.addChild(waveBtnTxt);
-waveBtn.x = W - 120;
+waveBtn.x = W - 100;
 waveBtn.y = 24;
 waveBtn.eventMode = 'static';
 waveBtn.cursor = 'pointer';
@@ -514,11 +580,15 @@ drawWaveBtn(false);
 
 const SHOP_TYPES = Object.keys(TDEFS);
 const shopBtns = [];
+// Portrait 2-row shop: row1=[Archer,Cannon,Rapid] row2=[Ice,Fire]
 SHOP_TYPES.forEach((type, i) => {
     const def = TDEFS[type];
     const btn = new PIXI.Container();
-    btn.x = 20 + i * 175;
-    btn.y = H - SHOP_H + 8;
+    const row = i < 3 ? 0 : 1;
+    const col = i < 3 ? i : i - 3;
+    const rowX0 = i < 3 ? 18 : 134; // row2 centered: (720-2*220-12)/2=134
+    btn.x = rowX0 + col * 232;
+    btn.y = H - SHOP_H + 10 + row * 68;
     btn.eventMode = 'static';
     btn.cursor = 'pointer';
     btn.on('pointerdown', (e) => {
@@ -559,11 +629,11 @@ function drawShopBtn(btn, type, selected, hover) {
     const canAfford = gold >= TDEFS[type].cost;
     bg.lineStyle(2, selected ? 0xffee44 : hover ? 0xaaaaaa : 0x334433, 0.9);
     bg.beginFill(selected ? 0x2a2a08 : hover ? 0x1a2a1a : 0x111118, 0.88);
-    bg.drawRoundedRect(0, 0, 165, 60, 7);
+    bg.drawRoundedRect(0, 0, 220, 60, 7);
     bg.endFill();
     if (!canAfford) {
         bg.beginFill(0x000000, 0.45);
-        bg.drawRoundedRect(0, 0, 165, 60, 7);
+        bg.drawRoundedRect(0, 0, 220, 60, 7);
         bg.endFill();
     }
 }
@@ -862,8 +932,8 @@ const scoreTxt = new PIXI.Text('Score: 0', {
     dropShadowColor: 0x000000,
     dropShadowDistance: 2,
 });
-scoreTxt.x = W / 2 - 60;
-scoreTxt.y = 10;
+scoreTxt.x = 14;
+scoreTxt.y = 62;
 uiLayer.addChild(scoreTxt);
 
 class Enemy {
@@ -873,6 +943,8 @@ class Enemy {
         this.x = PATH_PTS[0].x;
         this.y = PATH_PTS[0].y;
         this.wpIdx = 0; // current path waypoint index
+        this.dirX = 0;
+        this.dirY = 1; // initial direction: moving down
         this.hp = d.hp;
         this.maxHp = d.hp;
         this.spd = d.spd;
@@ -959,70 +1031,67 @@ class Enemy {
         g.clear();
         const c = flash ? 0xffffff : this.color;
         const ac = flash ? 0xffffff : this.accent;
-        const hw = this.w / 2,
-            hh = this.h;
-        g.beginFill(0x000000, 0.2);
-        g.drawEllipse(0, 2, hw + 2, 5);
+        const r = this.w / 2;
+        // Shadow
+        g.beginFill(0x000000, 0.3);
+        g.drawEllipse(r * 0.3, r * 0.3, r * 1.1, r * 0.7);
         g.endFill();
-        g.lineStyle(1.5, 0x000000, 0.4);
+        // Body circle
+        g.lineStyle(2, 0x000000, 0.4);
         g.beginFill(c);
-        g.drawRoundedRect(-hw, -hh, this.w, this.h * 0.65, 4);
+        g.drawCircle(0, 0, r);
         g.endFill();
-        g.beginFill(ac);
-        g.drawCircle(0, -hh - 4, this.w * 0.38);
-        g.endFill();
-        g.beginFill(c);
-        g.drawRoundedRect(-hw * 0.7, -hh - this.w * 0.38 - 4, this.w * 0.7 * 2, 8, 3);
-        g.endFill();
+        // Inner accent ring
+        g.lineStyle(1.5, ac, 0.7);
+        g.drawCircle(0, 0, r * 0.55);
+        // Direction indicator (arrow pointing movement direction)
         g.lineStyle(0);
-        g.beginFill(0x110000);
-        g.drawCircle(-4, -hh - 6, 2.5);
-        g.drawCircle(4, -hh - 6, 2.5);
+        g.beginFill(ac, 0.9);
+        const ax = this.dirX * r * 0.75,
+            ay = this.dirY * r * 0.75;
+        const perp = { x: -this.dirY * r * 0.3, y: this.dirX * r * 0.3 };
+        g.drawPolygon([ax, ay, -perp.x, -perp.y, perp.x, perp.y]);
         g.endFill();
-        const lsw = Math.sin(this.walkCycle) * 5;
-        g.lineStyle(3.5, c, 1);
-        g.moveTo(-5, -hh + this.h * 0.65);
-        g.lineTo(-5 + lsw, -hh + this.h);
-        g.moveTo(5, -hh + this.h * 0.65);
-        g.lineTo(5 - lsw, -hh + this.h);
-        // Type-specific visual badge
-        if (this.type === ENEMY.ICE) {
-            // Snowflake badge above head
-            g.lineStyle(1.5, 0xaaffff, 0.9);
-            const cx = 0,
-                cy = -hh - 10;
-            for (let a = 0; a < 3; a++) {
-                const ang = (a / 3) * Math.PI;
-                g.moveTo(cx + Math.cos(ang) * 7, cy + Math.sin(ang) * 7);
-                g.lineTo(cx - Math.cos(ang) * 7, cy - Math.sin(ang) * 7);
-            }
-            g.lineStyle(0);
-            g.beginFill(0xaaffff, 0.6);
-            g.drawCircle(cx, cy, 3);
-            g.endFill();
-        } else if (this.type === ENEMY.FIRE) {
-            // Flame spikes above head
-            g.lineStyle(0);
-            const fx = 0,
-                fy = -hh - 6;
-            for (let s = -1; s <= 1; s++) {
-                g.beginFill(0xff8800, 0.9);
-                g.drawPolygon([fx + s * 5 - 4, fy + 2, fx + s * 5 + 4, fy + 2, fx + s * 5, fy - 9]);
-                g.endFill();
-                g.beginFill(0xffee00, 0.85);
-                g.drawPolygon([fx + s * 5 - 2, fy + 2, fx + s * 5 + 2, fy + 2, fx + s * 5, fy - 5]);
-                g.endFill();
-            }
-        }
+        // HP bar (top-down: arc above)
         if (this.hp < this.maxHp) {
             g.lineStyle(0);
             g.beginFill(0x222222);
-            g.drawRect(-hw, -hh - 22, this.w, 6);
+            g.drawRect(-r, -r - 9, r * 2, 5);
             g.endFill();
-            const r = this.hp / this.maxHp;
-            g.beginFill(r > 0.6 ? 0x44dd44 : r > 0.3 ? 0xffaa00 : 0xff2200);
-            g.drawRect(-hw, -hh - 22, this.w * r, 6);
+            const hr = this.hp / this.maxHp;
+            g.beginFill(hr > 0.6 ? 0x44dd44 : hr > 0.3 ? 0xffaa00 : 0xff2200);
+            g.drawRect(-r, -r - 9, r * 2 * hr, 5);
             g.endFill();
+        }
+        // Type badge (ice/fire)
+        if (this.type === ENEMY.ICE) {
+            g.lineStyle(1.5, 0xaaffff, 0.9);
+            for (let a = 0; a < 3; a++) {
+                const ang = (a / 3) * Math.PI;
+                g.moveTo(Math.cos(ang) * r * 0.45, Math.sin(ang) * r * 0.45);
+                g.lineTo(-Math.cos(ang) * r * 0.45, -Math.sin(ang) * r * 0.45);
+            }
+            g.lineStyle(0);
+        } else if (this.type === ENEMY.FIRE) {
+            g.lineStyle(0);
+            for (let s = -1; s <= 1; s++) {
+                g.beginFill(0xff8800, 0.9);
+                g.drawPolygon([
+                    s * r * 0.35 - 3,
+                    -r * 0.2,
+                    s * r * 0.35 + 3,
+                    -r * 0.2,
+                    s * r * 0.35,
+                    -r * 0.75,
+                ]);
+                g.endFill();
+            }
+        }
+        // Boss crown
+        if (this.type === ENEMY.BOSS) {
+            g.lineStyle(2, 0xffcc00, 0.9);
+            g.drawCircle(0, 0, r + 4);
+            g.lineStyle(0);
         }
     }
     hit(dmg, sourceStatus = null) {
@@ -1088,10 +1157,16 @@ class Enemy {
         let remaining = effectiveSpd * dt;
         while (remaining > 0 && this.wpIdx < PATH_PTS.length - 1) {
             const target = PATH_PTS[this.wpIdx + 1];
-            const dx = target.x - this.x, dy = target.y - this.y;
+            const dx = target.x - this.x,
+                dy = target.y - this.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist > 0.01) {
+                this.dirX = dx / dist;
+                this.dirY = dy / dist;
+            }
             if (remaining >= dist) {
-                this.x = target.x; this.y = target.y;
+                this.x = target.x;
+                this.y = target.y;
                 this.wpIdx++;
                 remaining -= dist;
             } else {
@@ -1130,7 +1205,7 @@ class Tower {
         this.def = Object.assign({}, TDEFS[type]); // own copy so upgrades don't mutate TDEFS
         this.x = x;
         this.y = y;
-        this.fy = y - 25;
+        this.fy = y; // top-down: barrel fires from center
         this.cooldown = 0;
         this.wasReady = true;
         this.barrelAngle = 0;
@@ -1173,60 +1248,66 @@ class Tower {
         return this.cooldown <= 0;
     }
 
-    fire(vx, vy) {
+    fire(tx, ty) {
         this.cooldown = this.def.recharge;
-        this.barrelAngle = Math.atan2(vy, vx);
+        this.barrelAngle = Math.atan2(ty - this.y, tx - this.x);
         this._drawBarrel();
-        new SkillProjectile(
+        const dist = Math.hypot(tx - this.x, ty - this.y);
+        const hangTime = 0.35 + dist / 1800;
+        new TopDownBomb(
             this.x,
             this.fy,
-            vx,
-            vy,
+            tx,
+            ty,
             this.def.dmg,
             this.def.pColor,
             this.def.pSize,
             this.def.aoe,
             this.def.status,
+            hangTime,
         );
         playLaunch(this.type === TOWER.CANNON);
         triggerShake(this.type === TOWER.CANNON ? 7 : 3);
+        this.wasReady = false;
     }
 
     _drawBody() {
         const g = this.bodyGfx,
             d = this.def;
         g.clear();
-        // At higher levels the body gets a gold border
-        const borderColor = this.level === 3 ? 0xffcc00 : this.level === 2 ? 0xaaddff : 0x111122;
-        const borderAlpha = this.level > 1 ? 1.0 : 0.6;
+        const borderColor = this.level === 3 ? 0xffcc00 : this.level === 2 ? 0xaaddff : 0x334455;
+        const borderAlpha = this.level > 1 ? 1.0 : 0.55;
         // Shadow
-        g.beginFill(0x000000, 0.25);
-        g.drawEllipse(0, 5, 25, 10);
+        g.beginFill(0x000000, 0.28);
+        g.drawEllipse(5, 6, 26, 14);
         g.endFill();
-        // Base
-        g.lineStyle(2, borderColor, borderAlpha);
-        g.beginFill(0x222233);
-        g.drawRoundedRect(-22, -48, 44, 48, 6);
+        // Outer base plate
+        g.lineStyle(3, borderColor, borderAlpha);
+        g.beginFill(0x1a1a2e);
+        g.drawCircle(0, 0, 24);
         g.endFill();
+        // Colored body
+        g.lineStyle(1.5, d.accent, 0.6);
         g.beginFill(d.color);
-        g.drawRoundedRect(-17, -43, 34, 38, 5);
+        g.drawCircle(0, 0, 19);
         g.endFill();
-        g.beginFill(d.accent, 0.7);
-        g.drawRoundedRect(-12, -43, 24, 12, 3);
-        g.endFill();
-        // Emblem
+        // Accent inner ring
+        g.lineStyle(2, d.accent, 0.75);
+        g.drawCircle(0, 0, 10);
         g.lineStyle(0);
+        // Center emblem
         g.beginFill(0xffffff, 0.5);
-        g.drawCircle(0, -25, 6);
+        g.drawCircle(0, 0, 5);
         g.endFill();
         g.beginFill(d.accent);
-        g.drawCircle(0, -25, 4);
+        g.drawCircle(0, 0, 3);
         g.endFill();
-        // Level pips (small dots at the bottom of the body)
+        // Level pips
         for (let i = 0; i < this.level; i++) {
+            const ang = (i / 3) * Math.PI * 2 - Math.PI / 2;
             const pipColor = i === 0 ? 0xffffff : i === 1 ? 0xffee44 : 0xff8800;
             g.beginFill(pipColor, 0.9);
-            g.drawCircle(-6 + i * 6, -8, 3.5);
+            g.drawCircle(Math.cos(ang) * 14, Math.sin(ang) * 14, 3.5);
             g.endFill();
         }
     }
@@ -1239,8 +1320,8 @@ class Tower {
         const upgrades = UPGRADE_DEFS[this.type];
         const nextUpgrade = upgrades[this.level - 1]; // level 1→index 0, level 2→index 1
         const canAfford = gold >= nextUpgrade.cost;
-        const isAbove = this.y < 150; // near top → button goes below, else goes above
-        const btnY = isAbove ? 60 : -60;
+        const isAbove = this.y > H - SHOP_H - 130; // near bottom → show above
+        const btnY = isAbove ? -70 : 36;
 
         const bg = new PIXI.Graphics();
         bg.lineStyle(1.5, canAfford ? 0x88ff44 : 0x666666, 0.9);
@@ -1309,10 +1390,20 @@ class Tower {
         const g = this.barrelGfx,
             d = this.def;
         g.clear();
-        g.lineStyle(this.type === TOWER.CANNON ? 8 : 5, d.accent, 0.95);
-        const len = this.type === TOWER.CANNON ? 32 : 25;
-        g.moveTo(0, -25);
-        g.lineTo(Math.cos(this.barrelAngle) * len, -25 + Math.sin(this.barrelAngle) * len);
+        const isCannon = this.type === TOWER.CANNON;
+        g.lineStyle(isCannon ? 8 : 5, d.accent, 0.95);
+        const len = isCannon ? 30 : 24;
+        g.moveTo(0, 0);
+        g.lineTo(Math.cos(this.barrelAngle) * len, Math.sin(this.barrelAngle) * len);
+        // Barrel tip dot
+        g.lineStyle(0);
+        g.beginFill(d.accent, 0.8);
+        g.drawCircle(
+            Math.cos(this.barrelAngle) * len,
+            Math.sin(this.barrelAngle) * len,
+            isCannon ? 5 : 3,
+        );
+        g.endFill();
     }
 
     _drawCooldown() {
@@ -1321,28 +1412,15 @@ class Tower {
         g.clear();
         const ratio = this.cooldown / d.recharge;
         if (ratio <= 0) {
-            // Ready — green ring
             g.lineStyle(3, 0x44ff44, 0.9);
-            g.drawCircle(0, -22, 25);
+            g.drawCircle(0, 0, 27);
         } else {
-            // Cooldown arc — red that fills back to green
             const startAng = -Math.PI / 2;
             const endAng = startAng + (1 - ratio) * Math.PI * 2;
             g.lineStyle(3, 0xff3322, 0.7);
-            g.arc(0, -22, 25, startAng, startAng + Math.PI * 2); // full dim ring
+            g.arc(0, 0, 27, startAng, startAng + Math.PI * 2);
             g.lineStyle(3, 0x44ff44, 0.9);
-            if (endAng > startAng) g.arc(0, -22, 25, startAng, endAng); // filled portion
-        }
-        // Cooldown bar below tower
-        if (ratio > 0) {
-            g.lineStyle(0);
-            g.beginFill(0x333333, 0.8);
-            g.drawRect(-18, 4, 36, 5);
-            g.endFill();
-            const barColor = ratio > 0.6 ? 0xff3322 : ratio > 0.3 ? 0xffaa00 : 0x44ff44;
-            g.beginFill(barColor);
-            g.drawRect(-18, 4, 36 * (1 - ratio), 5);
-            g.endFill();
+            if (endAng > startAng) g.arc(0, 0, 27, startAng, endAng);
         }
     }
 
@@ -1398,149 +1476,110 @@ class Tower {
     }
 }
 
-// ── Unified skill projectile ───────────────────────────────────
-class SkillProjectile {
-    constructor(x, y, vx, vy, dmg = 1, color = 0xff3311, size = 14, aoe = 0, status = null) {
-        this.x = x;
-        this.y = y;
-        this.vx = vx;
-        this.vy = vy;
+// ── Top-down bomb projectile ───────────────────────────────────
+class TopDownBomb {
+    constructor(sx, sy, tx, ty, dmg, color, size, aoe, status, hangTime) {
+        this.sx = sx;
+        this.sy = sy;
+        this.tx = tx;
+        this.ty = ty;
         this.dmg = dmg;
         this.color = color;
         this.size = size;
-        this.aoe = aoe;
+        this.aoe = Math.max(aoe || 0, 18);
         this.status = status;
+        this.hangTime = hangTime;
+        this.timer = hangTime;
         this.alive = true;
-        this.age = 0;
-        this.trail = [];
 
         this.ctr = new PIXI.Container();
-        const glow = new PIXI.Graphics();
-        glow.beginFill(color, 0.25);
-        glow.drawCircle(0, 0, size * 2);
-        glow.endFill();
-        const core = new PIXI.Graphics();
-        core.beginFill(color);
-        core.drawCircle(0, 0, size);
-        core.endFill();
-        // Highlight
-        const hi = new PIXI.Graphics();
-        hi.beginFill(0xffffff, 0.4);
-        hi.drawCircle(-size * 0.3, -size * 0.3, size * 0.35);
-        hi.endFill();
-        this.ctr.addChild(glow);
-        this.ctr.addChild(core);
-        this.ctr.addChild(hi);
-        this.core = core;
-        this.glow = glow;
-        this.hi = hi;
-        this.trailCtr = new PIXI.Container();
-        projLayer.addChildAt(this.trailCtr, 0);
+
+        // Growing shadow circle at target
+        this.shadowGfx = new PIXI.Graphics();
+        this.ctr.addChild(this.shadowGfx);
+
+        // Spinning projectile dot that travels from tower to target
+        this.projGfx = new PIXI.Graphics();
+        this.projGfx.beginFill(color);
+        this.projGfx.drawCircle(0, 0, size * 0.6);
+        this.projGfx.endFill();
+        this.projGfx.beginFill(0xffffff, 0.5);
+        this.projGfx.drawCircle(-size * 0.2, -size * 0.2, size * 0.25);
+        this.projGfx.endFill();
+        this.ctr.addChild(this.projGfx);
+
         projLayer.addChild(this.ctr);
         projectiles.push(this);
     }
 
     update(dt) {
-        this.vy += GRAVITY * dt;
-        this.x += this.vx * dt;
-        this.y += this.vy * dt;
-        this.age += dt;
-        this.trail.push({ x: this.x, y: this.y });
-        if (this.trail.length > 18) this.trail.shift();
-        this.trailCtr.removeChildren();
-        this.trail.forEach((t, i) => {
-            const tg = new PIXI.Graphics();
-            const a = (i / this.trail.length) * 0.45;
-            const sz = (i / this.trail.length) * this.size * 0.85 + 1;
-            tg.beginFill(this.color, a);
-            tg.drawCircle(0, 0, sz);
-            tg.endFill();
-            tg.x = t.x;
-            tg.y = t.y;
-            this.trailCtr.addChild(tg);
-        });
-        this.ctr.x = this.x;
-        this.ctr.y = this.y;
-        this.core.rotation += 0.16;
-        this.hi.rotation -= 0.09; // glare orbits opposite direction
-        this.glow.scale.set(0.85 + Math.sin(this.age * 12) * 0.15);
-        return this._checkHit();
-    }
+        if (!this.alive) return false;
+        this.timer -= dt;
+        const progress = 1 - Math.max(this.timer, 0) / this.hangTime;
 
-    _checkHit() {
-        if (this.y > H - SHOP_H + 10 || this.x < -60 || this.x > W + 100) {
-            if (this.aoe > 0) this._explode();
-            else this._kill(false);
+        // Projectile moves from source to target
+        this.projGfx.x = this.sx + (this.tx - this.sx) * progress;
+        this.projGfx.y = this.sy + (this.ty - this.sy) * progress;
+        this.projGfx.rotation += 0.18;
+
+        // Growing shadow at target
+        const shadowR = this.aoe * (0.15 + progress * 0.85);
+        this.shadowGfx.clear();
+        this.shadowGfx.lineStyle(2, this.color, 0.6 * progress);
+        this.shadowGfx.beginFill(this.color, 0.1 * progress);
+        this.shadowGfx.drawCircle(this.tx, this.ty, shadowR);
+        this.shadowGfx.endFill();
+        // X crosshair in shadow
+        this.shadowGfx.lineStyle(1, this.color, 0.4 * progress);
+        const cr = shadowR * 0.35;
+        this.shadowGfx.moveTo(this.tx - cr, this.ty);
+        this.shadowGfx.lineTo(this.tx + cr, this.ty);
+        this.shadowGfx.moveTo(this.tx, this.ty - cr);
+        this.shadowGfx.lineTo(this.tx, this.ty + cr);
+
+        if (this.timer <= 0) {
+            this._impact();
             return false;
-        }
-        for (const e of enemies) {
-            if (!e.alive) continue;
-            const dx = this.x - e.x,
-                dy = this.y - (e.y - e.h / 2);
-            if (Math.abs(dx) < e.w / 2 + this.size && Math.abs(dy) < e.h / 2 + this.size) {
-                if (this.aoe > 0) {
-                    this._explode();
-                    return false;
-                }
-                const killed = e.hit(this.dmg, this.status);
-                triggerShake(killed ? 20 : 7);
-                burst(this.x, this.y, this.color, killed ? 20 : 8, killed);
-                this._kill(true);
-                return false;
-            }
         }
         return true;
     }
 
-    _explode() {
-        // AoE — damage + status every enemy within blast radius
+    _impact() {
+        this.alive = false;
         let anyKill = false;
         for (const e of enemies) {
             if (!e.alive) continue;
-            const dx = this.x - e.x,
-                dy = this.y - (e.y - e.h / 2);
+            const dx = this.tx - e.x,
+                dy = this.ty - e.y;
             if (Math.sqrt(dx * dx + dy * dy) < this.aoe + e.w / 2) {
                 const killed = e.hit(this.dmg, this.status);
                 if (killed) anyKill = true;
                 e.applyStatus(this.status);
-                e.shakeX = (Math.random() - 0.5) * 24;
-                e.shakeY = (Math.random() - 0.5) * 14;
             }
         }
-        triggerShake(anyKill ? 22 : 12);
         playHit(true);
-        burst(this.x, this.y, this.color, 28, true);
-        // Blast ring — colour reflects element
+        burst(this.tx, this.ty, this.color, anyKill ? 24 : 14, anyKill);
+        triggerShake(anyKill ? 20 : 8);
         const ringColor =
             this.status?.type === STATUS.SLOW
                 ? 0x66eeff
                 : this.status?.type === STATUS.BURN
                   ? 0xff5500
                   : 0xff8800;
-        const blastRing = new PIXI.Graphics();
-        blastRing.lineStyle(4, ringColor, 1);
-        blastRing.drawCircle(0, 0, this.aoe);
-        blastRing.x = this.x;
-        blastRing.y = this.y;
-        fxLayer.addChild(blastRing);
+        const ring = new PIXI.Graphics();
+        ring.lineStyle(3, ringColor, 1);
+        ring.drawCircle(this.tx, this.ty, 10);
+        fxLayer.addChild(ring);
         let rf = 0;
-        const go = () => {
+        const maxR = this.aoe / 8;
+        const expand = () => {
             rf++;
-            blastRing.scale.set(1 + rf * 0.06);
-            blastRing.alpha = 1 - rf / 18;
-            rf < 18 ? requestAnimationFrame(go) : blastRing.destroy();
+            ring.scale.set(1 + rf * maxR * 0.18);
+            ring.alpha = 1 - rf / 22;
+            rf < 22 ? requestAnimationFrame(expand) : ring.destroy();
         };
-        go();
-        this._kill(true);
-    }
-    _kill(hit) {
-        this.alive = false;
-        if (!hit) {
-            playHit(false);
-            burst(this.x, this.y, 0x888888, 5);
-        }
+        expand();
         this.ctr.destroy();
-        this.trailCtr.destroy();
     }
 }
 
@@ -1572,7 +1611,7 @@ function startWave() {
 function onGroundClick(wx, wy) {
     if (gameOver || phase !== PHASE.BUILD) return;
     if (!canPlaceTower(wx, wy)) {
-        spawnFloatText('Can\'t build here!', wx, wy - 30, 0xff4444);
+        spawnFloatText("Can't build here!", wx, wy - 30, 0xff4444);
         return;
     }
     const def = TDEFS[selectedType];
@@ -1646,11 +1685,16 @@ function toWorld(sx, sy) {
 function distToPath(px, py) {
     let min = Infinity;
     for (let i = 0; i < PATH_PTS.length - 1; i++) {
-        const ax = PATH_PTS[i].x, ay = PATH_PTS[i].y;
-        const bx = PATH_PTS[i+1].x, by = PATH_PTS[i+1].y;
-        const abx = bx-ax, aby = by-ay, len2 = abx*abx + aby*aby;
-        const t = len2 > 0 ? Math.max(0, Math.min(1, ((px-ax)*abx + (py-ay)*aby) / len2)) : 0;
-        const d = Math.hypot(px - (ax + t*abx), py - (ay + t*aby));
+        const ax = PATH_PTS[i].x,
+            ay = PATH_PTS[i].y;
+        const bx = PATH_PTS[i + 1].x,
+            by = PATH_PTS[i + 1].y;
+        const abx = bx - ax,
+            aby = by - ay,
+            len2 = abx * abx + aby * aby;
+        const t =
+            len2 > 0 ? Math.max(0, Math.min(1, ((px - ax) * abx + (py - ay) * aby) / len2)) : 0;
+        const d = Math.hypot(px - (ax + t * abx), py - (ay + t * aby));
         if (d < min) min = d;
     }
     return min;
@@ -1658,7 +1702,7 @@ function distToPath(px, py) {
 
 function canPlaceTower(px, py) {
     if (distToPath(px, py) < MIN_TOWER_PATH_DIST) return false;
-    if (py > H - SHOP_H - 10) return false; // in shop area
+    if (py > H - SHOP_H - 20 || py < 20) return false;
     for (const t of towers) {
         if (Math.hypot(px - t.x, py - t.y) < MIN_TOWER_TOWER_DIST) return false;
     }
@@ -1743,33 +1787,28 @@ function onUp() {
     }
 
     const anchor = aimAnchor();
-    const dx = anchor.x - dragPos.x,
-        dy = anchor.y - dragPos.y;
-    let dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist < 8) {
+    const pdx = dragPos.x - anchor.x,
+        pdy = dragPos.y - anchor.y;
+    const pdist = Math.sqrt(pdx * pdx + pdy * pdy);
+    if (pdist < 8) {
         dragPos = null;
         activeShooter = null;
         return;
     }
-    dist = Math.min(dist, MAX_PULL);
-    const ang = Math.atan2(dy, dx);
-    const vx = Math.cos(ang) * LAUNCH_SPD * (dist / MAX_PULL);
-    const vy = Math.sin(ang) * LAUNCH_SPD * (dist / MAX_PULL);
 
-    if (activeShooter instanceof Tower) {
-        activeShooter.fire(vx, vy);
-    } else {
-        // Slingshot
-        if (slShotCD > 0) {
-            dragPos = null;
-            activeShooter = null;
-            return;
-        }
-        new SkillProjectile(SL_ANCHOR.x, SL_ANCHOR.y, vx, vy, 1, 0xff3311, 14);
-        slShotCD = SL_SHOT_CD;
-        playLaunch(false);
-        triggerShake(4);
+    // Fire in the direction opposite to the pull
+    const clampedDist = Math.min(pdist, MAX_PULL);
+    const tx = anchor.x + (-pdx / pdist) * clampedDist * 11;
+    const ty = anchor.y + (-pdy / pdist) * clampedDist * 11;
+
+    if (activeShooter) {
+        activeShooter.fire(tx, ty);
     }
+    /* SLINGSHOT DISABLED — restore by uncommenting
+    else {
+        // slingshot fire
+    }
+    */
 
     dragPos = null;
     activeShooter = null;
@@ -1875,93 +1914,73 @@ app.ticker.add(() => {
     // ── Aim visuals ──────────────────────────────────────────────
     if (isAiming && dragPos) {
         const anchor = aimAnchor();
-        const rdx = dragPos.x - anchor.x,
-            rdy = dragPos.y - anchor.y;
-        let rdist = Math.sqrt(rdx * rdx + rdy * rdy);
-        let cx = dragPos.x,
-            cy = dragPos.y;
-        if (rdist > MAX_PULL) {
-            cx = anchor.x + (rdx / rdist) * MAX_PULL;
-            cy = anchor.y + (rdy / rdist) * MAX_PULL;
-            rdist = MAX_PULL;
-        }
-        const pwr = rdist / MAX_PULL;
+        // Pull vector: dragPos is BEHIND the tower, fire direction is opposite
+        const pdx = dragPos.x - anchor.x,
+            pdy = dragPos.y - anchor.y;
+        let pdist = Math.sqrt(pdx * pdx + pdy * pdy);
+        const clampedDist = Math.min(pdist, MAX_PULL);
+        const pwr = clampedDist / MAX_PULL;
         if (Math.abs(pwr - lastAimPow) > 0.06) {
             playAimTick(pwr);
             lastAimPow = pwr;
         }
 
-        // Power bar — positioned above anchor
+        // Fire direction = opposite of pull
+        const fdx = pdist > 0 ? -pdx / pdist : 0;
+        const fdy = pdist > 0 ? -pdy / pdist : -1;
+        const range = clampedDist * 11; // pull 140px → 1540px range
+        const tx = anchor.x + fdx * range;
+        const ty = anchor.y + fdy * range;
+
+        // Power bar above anchor
         pwrBg.clear();
         pwrBg.beginFill(0x000000, 0.5);
-        pwrBg.drawRoundedRect(anchor.x - 50, anchor.y - 155, 100, 12, 6);
+        pwrBg.drawRoundedRect(anchor.x - 50, anchor.y - 60, 100, 12, 6);
         pwrBg.endFill();
         pwrFill.clear();
         pwrFill.beginFill(pwr < 0.4 ? 0x44dd44 : pwr < 0.72 ? 0xffaa00 : 0xff2200);
-        pwrFill.drawRoundedRect(anchor.x - 48, anchor.y - 153, 96 * pwr, 8, 4);
+        pwrFill.drawRoundedRect(anchor.x - 48, anchor.y - 58, 96 * pwr, 8, 4);
         pwrFill.endFill();
+        pwrBg.visible = true;
+        pwrFill.visible = true;
 
-        // Aim ring around anchor
+        // Rubber band: line from anchor back to dragPos (the pull)
+        rubberBand.clear();
+        rubberBand.lineStyle(3, 0xe8b840, 0.9);
+        rubberBand.moveTo(anchor.x, anchor.y);
+        rubberBand.lineTo(dragPos.x, dragPos.y);
+
+        // Trajectory dots projected FORWARD from anchor toward target
+        aimLine.clear();
+        trajDots.forEach((d, i) => {
+            const t = (i + 1) / TDOT_N;
+            d.x = anchor.x + fdx * range * t;
+            d.y = anchor.y + fdy * range * t;
+            d.alpha = (1 - t) * 0.85;
+            d.visible = true;
+        });
+
+        // Target reticle at computed target
+        const def = activeShooter ? activeShooter.def : { pColor: 0xff3311, aoe: 30 };
+        const reticleR = Math.max(def.aoe || 0, 18) * 0.9;
         aimRing.clear();
-        aimRing.lineStyle(2, 0xffffff, 0.18 + Math.sin(now * 0.006) * 0.12);
-        aimRing.drawCircle(anchor.x, anchor.y, MAX_PULL);
+        aimRing.lineStyle(2, def.pColor || 0xff3311, 0.85);
+        aimRing.drawCircle(tx, ty, reticleR);
+        aimRing.lineStyle(1.5, 0xffffff, 0.55);
+        const cr = reticleR * 0.35;
+        aimRing.moveTo(tx - reticleR - 8, ty);
+        aimRing.lineTo(tx - cr, ty);
+        aimRing.moveTo(tx + cr, ty);
+        aimRing.lineTo(tx + reticleR + 8, ty);
+        aimRing.moveTo(tx, ty - reticleR - 8);
+        aimRing.lineTo(tx, ty - cr);
+        aimRing.moveTo(tx, ty + cr);
+        aimRing.lineTo(tx, ty + reticleR + 8);
+        aimRing.lineStyle(0);
+        aimRing.beginFill(def.pColor || 0xff3311, 0.4 + Math.sin(now * 0.008) * 0.25);
+        aimRing.drawCircle(tx, ty, 4);
+        aimRing.endFill();
         aimRing.visible = true;
-
-        if (!activeShooter) {
-            // SLINGSHOT — rubber band visual
-            rubberBand.clear();
-            aimLine.clear();
-            rubberBand.lineStyle(4, 0xe8b840, 0.95);
-            rubberBand.moveTo(SL_FORK_L.x, SL_FORK_L.y);
-            rubberBand.lineTo(cx, cy);
-            rubberBand.moveTo(SL_FORK_R.x, SL_FORK_R.y);
-            rubberBand.lineTo(cx, cy);
-            rubberBand.lineStyle(0);
-            rubberBand.beginFill(0x000000, 0.2);
-            rubberBand.drawCircle(cx + 3, cy + 4, 14);
-            rubberBand.endFill();
-            rubberBand.beginFill(0xff3311);
-            rubberBand.drawCircle(cx, cy, 14);
-            rubberBand.endFill();
-            rubberBand.beginFill(0xff8855);
-            rubberBand.drawCircle(cx - 4, cy - 4, 5);
-            rubberBand.endFill();
-        } else {
-            // TOWER — directional pull line
-            rubberBand.clear();
-            const def = activeShooter.def;
-            aimLine.clear();
-            aimLine.lineStyle(3, def.accent, 0.7);
-            aimLine.moveTo(anchor.x, anchor.y);
-            aimLine.lineTo(cx, cy);
-            aimLine.lineStyle(0);
-            aimLine.beginFill(0x000000, 0.2);
-            aimLine.drawCircle(cx + 2, cy + 3, def.pSize);
-            aimLine.endFill();
-            aimLine.beginFill(def.pColor);
-            aimLine.drawCircle(cx, cy, def.pSize);
-            aimLine.endFill();
-            aimLine.beginFill(0xffffff, 0.3);
-            aimLine.drawCircle(cx - def.pSize * 0.3, cy - def.pSize * 0.3, def.pSize * 0.35);
-            aimLine.endFill();
-        }
-
-        // Trajectory
-        const ldx = anchor.x - cx,
-            ldy = anchor.y - cy;
-        const ld = Math.sqrt(ldx * ldx + ldy * ldy);
-        const la = Math.atan2(ldy, ldx);
-        const spd = (ld / MAX_PULL) * LAUNCH_SPD;
-        const pts = computeTraj(anchor.x, anchor.y, Math.cos(la) * spd, Math.sin(la) * spd, TDOT_N);
-        for (let i = 0; i < TDOT_N; i++) {
-            if (i < pts.length) {
-                trajDots[i].x = pts[i].x;
-                trajDots[i].y = pts[i].y;
-                trajDots[i].visible = true;
-                trajDots[i].alpha = (1 - i / pts.length) * 0.88;
-                trajDots[i].scale.set(Math.max(1 - i * 0.022, 0.12));
-            } else trajDots[i].visible = false;
-        }
     } else {
         rubberBand.clear();
         aimLine.clear();

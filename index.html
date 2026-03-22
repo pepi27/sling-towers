@@ -22,9 +22,9 @@
     }
     #game-container {
       position: relative;
-      /* scale canvas to fit viewport while keeping 16:9 */
-      width: min(100vw, 177.78vh);   /* 177.78 = 1280/720 * 100 */
-      height: min(56.25vw, 100vh);   /* 56.25  = 720/1280 * 100 */
+      /* scale canvas to fit viewport while keeping 9:16 portrait */
+      width: min(100vw, 56.25vh);    /* 56.25 = 720/1280 * 100 */
+      height: min(177.78vw, 100vh);  /* 177.78 = 1280/720 * 100 */
     }
     #game-container canvas {
       width: 100% !important;
