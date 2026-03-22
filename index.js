@@ -881,7 +881,7 @@ const ENEMY_DEFS = {
         hp: 1,
         spd: 120,
         reward: 8,
-        color: 0xffcc22,
+        color: 0xccff22,
         accentColor: 0xffee88,
         w: 18,
         h: 26,
