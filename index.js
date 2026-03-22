@@ -4,14 +4,45 @@
 const W = 1280,
     H = 720;
 const GRAVITY = 820;
-const PATH_Y = 385;
 const SHOP_H = 80;
-const SPAWN_X = 1310;
-const BASE_X = 90;
 
 const ZOOM   = 1.18;                        // gameplay zoom factor
 const WL_CX  = W / 2;                       // worldLayer pivot x
 const WL_CY  = (H - SHOP_H) / 2;           // worldLayer pivot y (centre of play area)
+
+// Curved enemy path — control points for Catmull-Rom spline
+const PATH_CTRL = [
+    { x: 1340, y: 330 },
+    { x: 1080, y: 170 },
+    { x:  820, y: 400 },
+    { x:  580, y: 170 },
+    { x:  340, y: 400 },
+    { x:  160, y: 265 },
+    { x:   90, y: 355 },
+];
+// Generate dense smooth path from Catmull-Rom control points
+function buildPathPts(ctrl, segs) {
+    const out = [];
+    for (let i = 0; i < ctrl.length - 1; i++) {
+        const p0 = ctrl[Math.max(0, i - 1)];
+        const p1 = ctrl[i];
+        const p2 = ctrl[i + 1];
+        const p3 = ctrl[Math.min(ctrl.length - 1, i + 2)];
+        for (let s = 0; s < segs; s++) {
+            const t = s / segs, t2 = t * t, t3 = t2 * t;
+            out.push({
+                x: 0.5 * (2*p1.x + (-p0.x+p2.x)*t + (2*p0.x-5*p1.x+4*p2.x-p3.x)*t2 + (-p0.x+3*p1.x-3*p2.x+p3.x)*t3),
+                y: 0.5 * (2*p1.y + (-p0.y+p2.y)*t + (2*p0.y-5*p1.y+4*p2.y-p3.y)*t2 + (-p0.y+3*p1.y-3*p2.y+p3.y)*t3),
+            });
+        }
+    }
+    out.push(ctrl[ctrl.length - 1]);
+    return out;
+}
+const PATH_PTS = buildPathPts(PATH_CTRL, 20); // ~120 smooth points
+const PATH_WIDTH = 54;          // visual half-width of road
+const MIN_TOWER_PATH_DIST = 80; // can't place this close to path center
+const MIN_TOWER_TOWER_DIST = 65;// can't place this close to another tower
 
 // ── Type constants ─────────────────────────────────────────────
 const TOWER = { ARCHER: 'archer', CANNON: 'cannon', RAPID: 'rapid', ICE: 'ice', FIRE: 'fire' };
@@ -34,13 +65,6 @@ const MAX_PULL = 88;
 const LAUNCH_SPD = 1100;
 const SLOW_SCALE = 0.11;
 const SL_SHOT_CD = 0.45; // slingshot recharge
-
-// Tower slot grid  (6 above path, 6 below)
-const SLOT_XS = [380, 600, 820, 1040];
-const SLOTS = [
-    ...SLOT_XS.map((x, i) => ({ x, y: 268, id: i, tower: null })),
-    ...SLOT_XS.map((x, i) => ({ x, y: 502, id: i + 6, tower: null })),
-];
 
 // Tower types — each requires a manual skill shot, with its own recharge
 const TDEFS = {
@@ -341,147 +365,87 @@ app.stage.hitArea = new PIXI.Rectangle(0, 0, W, H);
 
 // ── Background ────────────────────────────────────────────────
 (function drawBG() {
+    // Sky + ground fill
     const g = new PIXI.Graphics();
-    g.beginFill(0x0a1406);
-    g.drawRect(0, 0, W, 260);
-    g.endFill();
-    g.beginFill(0x163a0c);
-    g.drawRect(0, 260, W, PATH_Y - 260);
-    g.endFill();
-    g.beginFill(0x7a5c10);
-    g.drawRect(0, PATH_Y - 8, W, 48);
-    g.endFill();
-    g.beginFill(0x9a740e, 0.6);
-    g.drawRect(0, PATH_Y - 2, W, 6);
-    g.endFill();
-    g.beginFill(0x163a0c);
-    g.drawRect(0, PATH_Y + 40, W, H - PATH_Y - 40 - SHOP_H);
-    g.endFill();
-    g.beginFill(0x08080f);
-    g.drawRect(0, H - SHOP_H, W, SHOP_H);
-    g.endFill();
-    g.lineStyle(1, 0x333355, 0.8);
-    g.moveTo(0, H - SHOP_H);
-    g.lineTo(W, H - SHOP_H);
+    g.beginFill(0x0a1406); g.drawRect(0, 0, W, H); g.endFill();
+    g.beginFill(0x163a0c); g.drawRect(0, 140, W, H - 140 - SHOP_H); g.endFill();
+    g.beginFill(0x08080f); g.drawRect(0, H - SHOP_H, W, SHOP_H); g.endFill();
+    g.lineStyle(1, 0x333355, 0.8); g.moveTo(0, H - SHOP_H); g.lineTo(W, H - SHOP_H);
     bgLayer.addChild(g);
 
-    for (let px = 20; px < W; px += 38) {
-        const s = new PIXI.Graphics();
-        s.beginFill(0x6b4e10, 0.45);
-        s.drawRoundedRect(px + Math.random() * 8 - 4, PATH_Y - 10, 14, 7, 2);
-        s.endFill();
-        s.beginFill(0x6b4e10, 0.45);
-        s.drawRoundedRect(px + Math.random() * 8 - 4, PATH_Y + 42, 14, 7, 2);
-        s.endFill();
-        bgLayer.addChild(s);
-    }
+    // Stars
     for (let i = 0; i < 90; i++) {
         const s = new PIXI.Graphics();
         s.beginFill(0xffffff, Math.random() * 0.55 + 0.15);
-        s.drawCircle(0, 0, Math.random() * 1.1 + 0.3);
-        s.endFill();
-        s.x = Math.random() * W;
-        s.y = Math.random() * 200;
+        s.drawCircle(0, 0, Math.random() * 1.1 + 0.3); s.endFill();
+        s.x = Math.random() * W; s.y = Math.random() * 160;
         bgLayer.addChild(s);
     }
-    for (let i = 0; i < 5; i++) {
-        const tx = 280 + i * 190;
-        [270, PATH_Y + 52].forEach((ty) => {
-            const t = new PIXI.Graphics();
-            t.beginFill(0x1e5010);
-            t.drawPolygon([0, -38, 22, 0, -22, 0]);
-            t.endFill();
-            t.beginFill(0x164010);
-            t.drawPolygon([0, -60, 16, -18, -16, -18]);
-            t.endFill();
-            t.beginFill(0x3c2010);
-            t.drawRect(-5, 0, 10, 18);
-            t.endFill();
-            t.x = tx;
-            t.y = ty;
-            bgLayer.addChild(t);
-        });
-    }
-    const c = new PIXI.Graphics();
-    c.beginFill(0x3a3a55);
-    c.drawRect(8, PATH_Y - 90, 88, 138);
-    c.endFill();
-    for (let i = 0; i < 5; i++) {
-        c.beginFill(0x4a4a66);
-        c.drawRect(8 + i * 18, PATH_Y - 108, 12, 22);
-        c.endFill();
-    }
-    c.beginFill(0x1a1a28);
-    c.drawRect(38, PATH_Y + 10, 28, 38);
-    c.endFill();
-    c.beginFill(0x5577aa, 0.7);
-    c.drawRect(44, PATH_Y + 16, 10, 10);
-    c.endFill();
-    const flag = new PIXI.Graphics();
-    flag.beginFill(0xee2222);
-    flag.drawPolygon([0, 0, 22, -14, 0, -28]);
-    flag.endFill();
-    flag.lineStyle(2, 0x888888);
-    flag.moveTo(0, 0);
-    flag.lineTo(0, -34);
-    flag.x = 8;
-    flag.y = PATH_Y - 108;
-    bgLayer.addChild(c);
-    bgLayer.addChild(flag);
 
-    /* SLINGSHOT DISABLED — restore by uncommenting
-    const sl = new PIXI.Graphics();
-    sl.lineStyle(13, 0x5a2d0c);
-    sl.moveTo(SL_ANCHOR.x, H - SHOP_H - 10);
-    sl.lineTo(SL_ANCHOR.x, SL_ANCHOR.y + 10);
-    sl.lineStyle(9, 0x6b3515);
-    sl.moveTo(SL_ANCHOR.x, SL_ANCHOR.y + 10);
-    sl.lineTo(SL_FORK_L.x, SL_FORK_L.y);
-    sl.lineStyle(9, 0x6b3515);
-    sl.moveTo(SL_ANCHOR.x, SL_ANCHOR.y + 10);
-    sl.lineTo(SL_FORK_R.x, SL_FORK_R.y);
-    sl.lineStyle(0);
-    sl.beginFill(0x8b4513);
-    sl.drawCircle(SL_FORK_L.x, SL_FORK_L.y, 7);
-    sl.endFill();
-    sl.beginFill(0x8b4513);
-    sl.drawCircle(SL_FORK_R.x, SL_FORK_R.y, 7);
-    sl.endFill();
-    bgLayer.addChild(sl);
-    */
+    // Curved dirt path — shadow, body, highlight
+    const drawPathLine = (width, color, alpha) => {
+        const pg = new PIXI.Graphics();
+        pg.lineStyle({ width, color, alpha, join: 'round', cap: 'round' });
+        pg.moveTo(PATH_PTS[0].x, PATH_PTS[0].y);
+        for (let i = 1; i < PATH_PTS.length; i++) pg.lineTo(PATH_PTS[i].x, PATH_PTS[i].y);
+        bgLayer.addChild(pg);
+    };
+    drawPathLine(PATH_WIDTH + 14, 0x3a2008, 0.5);  // shadow
+    drawPathLine(PATH_WIDTH,      0x8a6420, 1.0);  // main road
+    drawPathLine(PATH_WIDTH * 0.35, 0xaa7e2a, 0.55); // centre highlight
+
+    // Scatter trees (not drawn on path — random positions in grassland)
+    const treePositions = [
+        [220,110],[420,90],[650,100],[880,95],[1100,105],
+        [180,480],[380,490],[620,470],[860,485],[1080,475],
+        [280,200],[750,185],[1000,210],[460,430],[950,450],
+    ];
+    treePositions.forEach(([tx, ty]) => {
+        const t = new PIXI.Graphics();
+        t.beginFill(0x1e5010); t.drawPolygon([0,-38,22,0,-22,0]); t.endFill();
+        t.beginFill(0x164010); t.drawPolygon([0,-60,16,-18,-16,-18]); t.endFill();
+        t.beginFill(0x3c2010); t.drawRect(-5,0,10,18); t.endFill();
+        t.x = tx; t.y = ty;
+        bgLayer.addChild(t);
+    });
+
+    // Castle at path end
+    const bx = PATH_CTRL[PATH_CTRL.length - 1].x;
+    const by = PATH_CTRL[PATH_CTRL.length - 1].y;
+    const c = new PIXI.Graphics();
+    c.beginFill(0x3a3a55); c.drawRect(bx - 44, by - 95, 88, 138); c.endFill();
+    for (let i = 0; i < 5; i++) {
+        c.beginFill(0x4a4a66); c.drawRect(bx - 44 + i * 18, by - 113, 12, 22); c.endFill();
+    }
+    c.beginFill(0x1a1a28); c.drawRect(bx - 14, by + 5, 28, 38); c.endFill();
+    c.beginFill(0x5577aa, 0.7); c.drawRect(bx - 8, by + 11, 10, 10); c.endFill();
+    const flag = new PIXI.Graphics();
+    flag.beginFill(0xee2222); flag.drawPolygon([0,0,22,-14,0,-28]); flag.endFill();
+    flag.lineStyle(2, 0x888888); flag.moveTo(0,0); flag.lineTo(0,-34);
+    flag.x = bx - 44; flag.y = by - 113;
+    bgLayer.addChild(c); bgLayer.addChild(flag);
 })();
 
-// ── Tower slots ───────────────────────────────────────────────
-const slotGfxMap = new Map();
-SLOTS.forEach((slot) => {
-    const g = new PIXI.Graphics();
-    drawSlotGfx(g, slot, false);
-    g.x = slot.x;
-    g.y = slot.y;
-    g.eventMode = 'static';
-    g.cursor = 'pointer';
-    g.on('pointerdown', (e) => {
-        e.stopPropagation();
-        onSlotClick(slot);
-    });
-    slotLayer.addChild(g);
-    slotGfxMap.set(slot.id, g);
-});
+// ── Placement ghost preview ────────────────────────────────────
+const ghostGfx = new PIXI.Graphics();
+slotLayer.addChild(ghostGfx);
+let ghostPos = null; // world coords of current hover position
 
-function drawSlotGfx(g, slot, hover) {
-    g.clear();
-    if (slot.tower) return;
-    g.lineStyle(2, hover ? 0xffffff : 0x44aa44, hover ? 0.9 : 0.45);
-    g.beginFill(0x1e5010, hover ? 0.55 : 0.25);
-    g.drawRoundedRect(-24, -24, 48, 48, 6);
-    g.endFill();
-    g.lineStyle(0);
-    g.beginFill(hover ? 0xffffff : 0x44aa44, hover ? 0.7 : 0.35);
-    g.drawPolygon([0, -10, 8, 4, -8, 4]);
-    g.endFill();
-}
-function refreshSlot(slot) {
-    drawSlotGfx(slotGfxMap.get(slot.id), slot, false);
+function updateGhost(wx, wy) {
+    ghostGfx.clear();
+    if (phase !== PHASE.BUILD || isAiming || gameOver) { ghostPos = null; return; }
+    ghostPos = { x: wx, y: wy };
+    const valid = canPlaceTower(wx, wy);
+    const canAfford = gold >= TDEFS[selectedType].cost;
+    const ok = valid && canAfford;
+    ghostGfx.lineStyle(2, ok ? 0x88ff44 : 0xff3322, 0.9);
+    ghostGfx.beginFill(ok ? 0x44aa22 : 0xff2200, 0.22);
+    ghostGfx.drawCircle(wx, wy, 28); ghostGfx.endFill();
+    if (!valid) {
+        ghostGfx.lineStyle(2.5, 0xff3322, 0.9);
+        ghostGfx.moveTo(wx - 12, wy - 12); ghostGfx.lineTo(wx + 12, wy + 12);
+        ghostGfx.moveTo(wx + 12, wy - 12); ghostGfx.lineTo(wx - 12, wy + 12);
+    }
 }
 
 // ── HUD ───────────────────────────────────────────────────────
@@ -645,7 +609,7 @@ let _coinId = 0;
 class Coin {
     constructor(x, y, amount) {
         this.x = x;
-        this.baseY = PATH_Y - 15;
+        this.baseY = y - 5;
         this.y = y;
         this.amount = amount;
         this.vy = -180;
@@ -906,8 +870,9 @@ class Enemy {
     constructor(type) {
         const d = ENEMY_DEFS[type];
         this.type = type;
-        this.x = SPAWN_X;
-        this.y = PATH_Y + 10;
+        this.x = PATH_PTS[0].x;
+        this.y = PATH_PTS[0].y;
+        this.wpIdx = 0; // current path waypoint index
         this.hp = d.hp;
         this.maxHp = d.hp;
         this.spd = d.spd;
@@ -1119,7 +1084,22 @@ class Enemy {
         }
 
         const effectiveSpd = this.spd * (this.slowTimer > 0 ? this.slowFactor : 1);
-        this.x -= effectiveSpd * dt;
+        // Follow path waypoints
+        let remaining = effectiveSpd * dt;
+        while (remaining > 0 && this.wpIdx < PATH_PTS.length - 1) {
+            const target = PATH_PTS[this.wpIdx + 1];
+            const dx = target.x - this.x, dy = target.y - this.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (remaining >= dist) {
+                this.x = target.x; this.y = target.y;
+                this.wpIdx++;
+                remaining -= dist;
+            } else {
+                this.x += (dx / dist) * remaining;
+                this.y += (dy / dist) * remaining;
+                remaining = 0;
+            }
+        }
         this.walkCycle += effectiveSpd * dt * 0.07;
         if (this.hitFlash > 0) {
             this.hitFlash--;
@@ -1129,11 +1109,12 @@ class Enemy {
         this.shakeY *= 0.7;
         this.ctr.x = this.x + this.shakeX;
         this.ctr.y = this.y + this.shakeY;
-        if (this.x < BASE_X + 20) {
+        if (this.wpIdx >= PATH_PTS.length - 1) {
+            const ep = PATH_PTS[PATH_PTS.length - 1];
             lives--;
             updateHUD();
-            burst(BASE_X + 40, PATH_Y, 0xff2222, 10);
-            spawnFloatText(`-1 ❤️`, BASE_X + 40, PATH_Y - 40, 0xff4444);
+            burst(ep.x, ep.y, 0xff2222, 10);
+            spawnFloatText(`-1 ❤️`, ep.x, ep.y - 40, 0xff4444);
             this.alive = false;
             waveAlive = Math.max(0, waveAlive - 1);
             this.ctr.destroy();
@@ -1144,25 +1125,22 @@ class Enemy {
 
 // ── Tower — manual skill-shot launcher ────────────────────────
 class Tower {
-    constructor(slot, type) {
-        this.slot = slot;
+    constructor(x, y, type) {
         this.type = type;
         this.def = Object.assign({}, TDEFS[type]); // own copy so upgrades don't mutate TDEFS
-        this.x = slot.x;
-        this.y = slot.y;
-        this.fy = slot.y - 25;
+        this.x = x;
+        this.y = y;
+        this.fy = y - 25;
         this.cooldown = 0;
         this.wasReady = true;
         this.barrelAngle = 0;
         this.level = 1;
 
-        slot.tower = this;
         towers.push(this);
-        refreshSlot(slot);
 
         this.ctr = new PIXI.Container();
-        this.ctr.x = slot.x;
-        this.ctr.y = slot.y;
+        this.ctr.x = x;
+        this.ctr.y = y;
         this.bodyGfx = new PIXI.Graphics();
         this.cdGfx = new PIXI.Graphics();
         this.barrelGfx = new PIXI.Graphics();
@@ -1172,8 +1150,8 @@ class Tower {
         // Upgrade button lives as a sibling in towerLayer (not child of this.ctr)
         // so its events never conflict with the tower's hitArea/pointerdown
         this.upgradeBtnCtr = new PIXI.Container();
-        this.upgradeBtnCtr.x = slot.x;
-        this.upgradeBtnCtr.y = slot.y;
+        this.upgradeBtnCtr.x = x;
+        this.upgradeBtnCtr.y = y;
         towerLayer.addChild(this.upgradeBtnCtr);
 
         // Tower body click → aim
@@ -1261,8 +1239,8 @@ class Tower {
         const upgrades = UPGRADE_DEFS[this.type];
         const nextUpgrade = upgrades[this.level - 1]; // level 1→index 0, level 2→index 1
         const canAfford = gold >= nextUpgrade.cost;
-        const isAbove = this.y < PATH_Y; // tower above path → button goes below, and vice versa
-        const btnY = isAbove ? 18 : -56;
+        const isAbove = this.y < 150; // near top → button goes below, else goes above
+        const btnY = isAbove ? 60 : -60;
 
         const bg = new PIXI.Graphics();
         bg.lineStyle(1.5, canAfford ? 0x88ff44 : 0x666666, 0.9);
@@ -1591,17 +1569,22 @@ function startWave() {
     updateHUD();
     spawnFloatText(`Wave ${waveNum}!`, W / 2, H / 2 - 80, 0xff8844);
 }
-function onSlotClick(slot) {
-    if (slot.tower || gameOver) return;
+function onGroundClick(wx, wy) {
+    if (gameOver || phase !== PHASE.BUILD) return;
+    if (!canPlaceTower(wx, wy)) {
+        spawnFloatText('Can\'t build here!', wx, wy - 30, 0xff4444);
+        return;
+    }
     const def = TDEFS[selectedType];
     if (gold < def.cost) {
-        spawnFloatText('Not enough gold!', slot.x, slot.y - 30, 0xff4444);
+        spawnFloatText('Not enough gold!', wx, wy - 30, 0xff4444);
         return;
     }
     gold -= def.cost;
     updateHUD();
-    new Tower(slot, selectedType);
-    spawnFloatText(`-${def.cost}g`, slot.x, slot.y - 30, 0xffdd44);
+    new Tower(wx, wy, selectedType);
+    spawnFloatText(`-${def.cost}g`, wx, wy - 30, 0xffdd44);
+    ghostGfx.clear();
 }
 
 // ── Aim visuals (shared between slingshot + towers) ────────────
@@ -1660,6 +1643,28 @@ function toWorld(sx, sy) {
     return { x: (sx - WL_CX) / ZOOM + WL_CX, y: (sy - WL_CY) / ZOOM + WL_CY };
 }
 
+function distToPath(px, py) {
+    let min = Infinity;
+    for (let i = 0; i < PATH_PTS.length - 1; i++) {
+        const ax = PATH_PTS[i].x, ay = PATH_PTS[i].y;
+        const bx = PATH_PTS[i+1].x, by = PATH_PTS[i+1].y;
+        const abx = bx-ax, aby = by-ay, len2 = abx*abx + aby*aby;
+        const t = len2 > 0 ? Math.max(0, Math.min(1, ((px-ax)*abx + (py-ay)*aby) / len2)) : 0;
+        const d = Math.hypot(px - (ax + t*abx), py - (ay + t*aby));
+        if (d < min) min = d;
+    }
+    return min;
+}
+
+function canPlaceTower(px, py) {
+    if (distToPath(px, py) < MIN_TOWER_PATH_DIST) return false;
+    if (py > H - SHOP_H - 10) return false; // in shop area
+    for (const t of towers) {
+        if (Math.hypot(px - t.x, py - t.y) < MIN_TOWER_TOWER_DIST) return false;
+    }
+    return true;
+}
+
 // Returns current aim anchor position
 function aimAnchor() {
     return activeShooter ? { x: activeShooter.x, y: activeShooter.fy } : SL_ANCHOR;
@@ -1690,9 +1695,13 @@ function onTowerDown(tower) {
 }
 
 // Stage pointerdown — slingshot disabled; towers intercept their own events
-app.stage.on('pointerdown', () => {
+app.stage.on('pointerdown', (e) => {
     if (gameOver || isAiming) return;
     AC.resume();
+    if (phase === PHASE.BUILD) {
+        const p = toWorld(e.global.x, e.global.y);
+        onGroundClick(p.x, p.y);
+    }
     /* SLINGSHOT DISABLED — restore by uncommenting
     const p = toWorld(e.global.x, e.global.y);
     const dx = p.x - SL_ANCHOR.x, dy = p.y - SL_ANCHOR.y;
@@ -1703,6 +1712,7 @@ app.stage.on('pointerdown', () => {
 app.stage.on('pointermove', (e) => {
     const p = toWorld(e.global.x, e.global.y);
     if (isAiming) dragPos = p;
+    updateGhost(p.x, p.y);
     // Collect coins by dragging/hovering over them
     for (let i = coins.length - 1; i >= 0; i--) {
         const c = coins[i];
