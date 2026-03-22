@@ -73,8 +73,14 @@ const PHASE = { BUILD: 'build', WAVE: 'wave' };
 const SL_ANCHOR = { x: 180, y: 700 };
 const SL_FORK_L = { x: 158, y: 658 };
 const SL_FORK_R = { x: 202, y: 658 };
-const MAX_PULL = 300;
+const MAX_PULL = 420;
 const LAUNCH_SPD = 1100;
+
+// Direct aim direction — no distortion, 1:1 pull-to-angle mapping (Angry Birds feel).
+// Sensitivity is controlled purely by MAX_PULL: larger = need bigger drag for same angle.
+function compressAimDir(rawFdx, rawFdy) {
+    return { x: rawFdx, y: rawFdy };
+}
 const SLOW_SCALE = 0.11;
 const SL_SHOT_CD = 0.45; // slingshot recharge
 
@@ -155,45 +161,49 @@ const TDEFS = {
 // Upgrade tiers per tower type (applied on top of current def)
 const UPGRADE_DEFS = {
     [TOWER.ARCHER]: [
-        { cost:  45, dmg: 2,   recharge: 1.3,  pSize: 14, label: 'Lv2: +dmg +speed' },
-        { cost:  85, dmg: 3.5, recharge: 0.9,  pSize: 16, label: 'Lv3: +dmg max speed' },
+        { cost: 45, dmg: 2, recharge: 1.3, pSize: 14, label: 'Lv2: +dmg +speed' },
+        { cost: 85, dmg: 3.5, recharge: 0.9, pSize: 16, label: 'Lv3: +dmg max speed' },
         { cost: 130, dmg: 5.5, recharge: 0.65, pSize: 18, label: 'Lv4: sniper shot' },
-        { cost: 200, dmg: 8,   recharge: 0.45, pSize: 20, label: 'Lv5: eagle eye' },
+        { cost: 200, dmg: 8, recharge: 0.45, pSize: 20, label: 'Lv5: eagle eye' },
     ],
     [TOWER.CANNON]: [
-        { cost: 100, dmg:  7, aoe:  75, recharge: 2.6, label: 'Lv2: +dmg +blast' },
+        { cost: 100, dmg: 7, aoe: 75, recharge: 2.6, label: 'Lv2: +dmg +blast' },
         { cost: 170, dmg: 12, aoe: 100, recharge: 2.0, label: 'Lv3: mega blast' },
         { cost: 240, dmg: 18, aoe: 130, recharge: 1.6, label: 'Lv4: heavy shell' },
         { cost: 350, dmg: 28, aoe: 165, recharge: 1.2, label: 'Lv5: devastator' },
     ],
     [TOWER.RAPID]: [
-        { cost:  55, dmg: 0.8, recharge: 0.45, pSize:  9, label: 'Lv2: +dmg faster' },
+        { cost: 55, dmg: 0.8, recharge: 0.45, pSize: 9, label: 'Lv2: +dmg faster' },
         { cost: 100, dmg: 1.3, recharge: 0.28, pSize: 10, label: 'Lv3: bullet storm' },
         { cost: 160, dmg: 2.0, recharge: 0.18, pSize: 11, label: 'Lv4: gatling' },
-        { cost: 240, dmg: 3.0, recharge: 0.10, pSize: 12, label: 'Lv5: minigun' },
+        { cost: 240, dmg: 3.0, recharge: 0.1, pSize: 12, label: 'Lv5: minigun' },
     ],
     [TOWER.ICE]: [
         {
             cost: 65,
-            dmg: 0.8, aoe: 100,
+            dmg: 0.8,
+            aoe: 100,
             status: { type: STATUS.SLOW, duration: 3.5, factor: 0.25 },
             label: 'Lv2: bigger freeze',
         },
         {
             cost: 115,
-            dmg: 1.2, aoe: 130,
+            dmg: 1.2,
+            aoe: 130,
             status: { type: STATUS.SLOW, duration: 5.0, factor: 0.12 },
             label: 'Lv3: deep freeze',
         },
         {
             cost: 180,
-            dmg: 2.0, aoe: 160,
+            dmg: 2.0,
+            aoe: 160,
             status: { type: STATUS.SLOW, duration: 6.5, factor: 0.08 },
             label: 'Lv4: permafrost',
         },
         {
             cost: 270,
-            dmg: 3.0, aoe: 200,
+            dmg: 3.0,
+            aoe: 200,
             status: { type: STATUS.SLOW, duration: 8.0, factor: 0.04 },
             label: 'Lv5: absolute zero',
         },
@@ -201,25 +211,29 @@ const UPGRADE_DEFS = {
     [TOWER.FIRE]: [
         {
             cost: 70,
-            dmg: 1.5, aoe: 70,
+            dmg: 1.5,
+            aoe: 70,
             status: { type: STATUS.BURN, duration: 4.5, dps: 2.5 },
             label: 'Lv2: hotter burn',
         },
         {
             cost: 125,
-            dmg: 2.5, aoe: 90,
+            dmg: 2.5,
+            aoe: 90,
             status: { type: STATUS.BURN, duration: 6.0, dps: 4.5 },
             label: 'Lv3: inferno',
         },
         {
             cost: 190,
-            dmg: 4.0, aoe: 115,
+            dmg: 4.0,
+            aoe: 115,
             status: { type: STATUS.BURN, duration: 7.0, dps: 7.0 },
             label: 'Lv4: wildfire',
         },
         {
             cost: 280,
-            dmg: 6.0, aoe: 145,
+            dmg: 6.0,
+            aoe: 145,
             status: { type: STATUS.BURN, duration: 8.5, dps: 11.0 },
             label: 'Lv5: supernova',
         },
@@ -547,8 +561,10 @@ function updateGhost(wx, wy) {
     ghostGfx.drawCircle(wx, wy, 30);
     if (!valid) {
         ghostGfx.lineStyle(2.5, 0xff3322, 0.9);
-        ghostGfx.moveTo(wx - 14, wy - 14); ghostGfx.lineTo(wx + 14, wy + 14);
-        ghostGfx.moveTo(wx + 14, wy - 14); ghostGfx.lineTo(wx - 14, wy + 14);
+        ghostGfx.moveTo(wx - 14, wy - 14);
+        ghostGfx.lineTo(wx + 14, wy + 14);
+        ghostGfx.moveTo(wx + 14, wy - 14);
+        ghostGfx.lineTo(wx - 14, wy + 14);
     }
 }
 
@@ -619,23 +635,40 @@ drawWaveBtn(false);
 // Draw tower icon identical to in-game look — centered at (0,0), barrel pointing up
 function drawTowerIcon(g, def, type) {
     // Shadow
-    g.beginFill(0x000000, 0.28); g.drawEllipse(5, 6, 26, 14); g.endFill();
+    g.beginFill(0x000000, 0.28);
+    g.drawEllipse(5, 6, 26, 14);
+    g.endFill();
     // Outer base plate
-    g.lineStyle(3, 0x334455, 0.55); g.beginFill(0x1a1a2e); g.drawCircle(0, 0, 24); g.endFill();
+    g.lineStyle(3, 0x334455, 0.55);
+    g.beginFill(0x1a1a2e);
+    g.drawCircle(0, 0, 24);
+    g.endFill();
     // Colored body
-    g.lineStyle(1.5, def.accent, 0.6); g.beginFill(def.color); g.drawCircle(0, 0, 19); g.endFill();
+    g.lineStyle(1.5, def.accent, 0.6);
+    g.beginFill(def.color);
+    g.drawCircle(0, 0, 19);
+    g.endFill();
     // Accent inner ring
-    g.lineStyle(2, def.accent, 0.75); g.drawCircle(0, 0, 10); g.lineStyle(0);
+    g.lineStyle(2, def.accent, 0.75);
+    g.drawCircle(0, 0, 10);
+    g.lineStyle(0);
     // Centre emblem
-    g.beginFill(0xffffff, 0.5); g.drawCircle(0, 0, 5); g.endFill();
-    g.beginFill(def.accent); g.drawCircle(0, 0, 3); g.endFill();
+    g.beginFill(0xffffff, 0.5);
+    g.drawCircle(0, 0, 5);
+    g.endFill();
+    g.beginFill(def.accent);
+    g.drawCircle(0, 0, 3);
+    g.endFill();
     // Barrel pointing up
     const isCannon = type === TOWER.CANNON;
     const bLen = isCannon ? 30 : 24;
     g.lineStyle(isCannon ? 8 : 5, def.accent, 0.95);
-    g.moveTo(0, 0); g.lineTo(0, -bLen);
+    g.moveTo(0, 0);
+    g.lineTo(0, -bLen);
     g.lineStyle(0);
-    g.beginFill(def.accent, 0.8); g.drawCircle(0, -bLen, isCannon ? 5 : 3); g.endFill();
+    g.beginFill(def.accent, 0.8);
+    g.drawCircle(0, -bLen, isCannon ? 5 : 3);
+    g.endFill();
 }
 
 const SHOP_TYPES = Object.keys(TDEFS);
@@ -667,9 +700,9 @@ SHOP_TYPES.forEach((type, i) => {
     btn.addChild(bg);
     const icon = new PIXI.Graphics();
     drawTowerIcon(icon, def, type);
-    icon.scale.set(0.6);   // 24px radius * 0.6 = ~29px diameter fits in 60px button
-    icon.x = 20;           // center of ~40px icon area (24*0.6 = ~14px radius → center at 14+6=20)
-    icon.y = 36;           // vertical center of 60px button + barrel offset
+    icon.scale.set(0.6); // 24px radius * 0.6 = ~29px diameter fits in 60px button
+    icon.x = 20; // center of ~40px icon area (24*0.6 = ~14px radius → center at 14+6=20)
+    icon.y = 36; // vertical center of 60px button + barrel offset
     btn.addChild(icon);
     const lbl = new PIXI.Text(`${def.name}\n${def.label}`, {
         fontFamily: 'Arial,sans-serif',
@@ -1868,10 +1901,11 @@ function onUp(e) {
         return;
     }
 
-    // Fire in the direction opposite to the pull
+    // Fire in the direction opposite to the pull (angle-compressed)
     const clampedDist = Math.min(pdist, MAX_PULL);
-    const tx = anchor.x + (-pdx / pdist) * clampedDist * 11;
-    const ty = anchor.y + (-pdy / pdist) * clampedDist * 11;
+    const fd = compressAimDir(-pdx / pdist, -pdy / pdist);
+    const tx = anchor.x + fd.x * clampedDist * 3;
+    const ty = anchor.y + fd.y * clampedDist * 3;
 
     if (activeShooter) {
         activeShooter.fire(tx, ty);
@@ -1997,10 +2031,11 @@ app.ticker.add(() => {
             lastAimPow = pwr;
         }
 
-        // Fire direction = opposite of pull
-        const fdx = pdist > 0 ? -pdx / pdist : 0;
-        const fdy = pdist > 0 ? -pdy / pdist : -1;
-        const range = clampedDist * 11; // pull 140px → 1540px range
+        // Fire direction = opposite of pull (angle-compressed)
+        const rawFdx = pdist > 0 ? -pdx / pdist : 0;
+        const rawFdy = pdist > 0 ? -pdy / pdist : -1;
+        const { x: fdx, y: fdy } = compressAimDir(rawFdx, rawFdy);
+        const range = clampedDist * 3;
         const tx = anchor.x + fdx * range;
         const ty = anchor.y + fdy * range;
 
