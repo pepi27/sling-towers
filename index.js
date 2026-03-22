@@ -1031,6 +1031,29 @@ scoreTxt.x = 14;
 scoreTxt.y = 62;
 uiLayer.addChild(scoreTxt);
 
+// ── FPS counter (tap to toggle, or press F) ───────────────────
+let fpsVisible = false;
+let fpsFrames = 0, fpsAccum = 0, fpsDisplay = 0;
+const fpsTxt = new PIXI.Text('', {
+    fontFamily: 'monospace',
+    fontSize: 13,
+    fill: 0x00ff88,
+    dropShadow: true, dropShadowBlur: 3, dropShadowColor: 0x000000, dropShadowDistance: 1,
+});
+fpsTxt.x = W - 60;
+fpsTxt.y = 48;
+fpsTxt.visible = fpsVisible;
+fpsTxt.eventMode = 'static';
+fpsTxt.cursor = 'pointer';
+fpsTxt.on('pointerdown', (e) => { e.stopPropagation(); fpsVisible = false; fpsTxt.visible = false; });
+uiLayer.addChild(fpsTxt);
+window.addEventListener('keydown', (e) => {
+    if (e.key === 'f' || e.key === 'F') {
+        fpsVisible = !fpsVisible;
+        fpsTxt.visible = fpsVisible;
+    }
+});
+
 class Enemy {
     constructor(type) {
         const d = ENEMY_DEFS[type];
@@ -1965,6 +1988,17 @@ app.ticker.add(() => {
     const rawDt = Math.min((now - lastTs) / 1000, 0.05);
     lastTs = now;
     const dt = rawDt * timeScale;
+
+    // FPS counter
+    if (fpsVisible) {
+        fpsAccum += rawDt;
+        fpsFrames++;
+        if (fpsAccum >= 0.5) {
+            fpsDisplay = Math.round(fpsFrames / fpsAccum);
+            fpsFrames = 0; fpsAccum = 0;
+        }
+        fpsTxt.text = `${fpsDisplay} fps`;
+    }
 
     // Screen shake — offset from the pivot-anchored base position
     if (shakeAmt > 0.3) {
