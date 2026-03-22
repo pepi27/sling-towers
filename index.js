@@ -155,51 +155,77 @@ const TDEFS = {
 // Upgrade tiers per tower type (applied on top of current def)
 const UPGRADE_DEFS = {
     [TOWER.ARCHER]: [
-        { cost: 45, dmg: 2, recharge: 1.3, pSize: 14, label: 'Lv2: +dmg +speed' },
-        { cost: 85, dmg: 3.5, recharge: 0.9, pSize: 16, label: 'Lv3: +dmg max speed' },
+        { cost:  45, dmg: 2,   recharge: 1.3,  pSize: 14, label: 'Lv2: +dmg +speed' },
+        { cost:  85, dmg: 3.5, recharge: 0.9,  pSize: 16, label: 'Lv3: +dmg max speed' },
+        { cost: 130, dmg: 5.5, recharge: 0.65, pSize: 18, label: 'Lv4: sniper shot' },
+        { cost: 200, dmg: 8,   recharge: 0.45, pSize: 20, label: 'Lv5: eagle eye' },
     ],
     [TOWER.CANNON]: [
-        { cost: 100, dmg: 7, aoe: 75, recharge: 2.6, label: 'Lv2: +dmg +blast' },
+        { cost: 100, dmg:  7, aoe:  75, recharge: 2.6, label: 'Lv2: +dmg +blast' },
         { cost: 170, dmg: 12, aoe: 100, recharge: 2.0, label: 'Lv3: mega blast' },
+        { cost: 240, dmg: 18, aoe: 130, recharge: 1.6, label: 'Lv4: heavy shell' },
+        { cost: 350, dmg: 28, aoe: 165, recharge: 1.2, label: 'Lv5: devastator' },
     ],
     [TOWER.RAPID]: [
-        { cost: 55, dmg: 0.8, recharge: 0.45, pSize: 9, label: 'Lv2: +dmg faster' },
+        { cost:  55, dmg: 0.8, recharge: 0.45, pSize:  9, label: 'Lv2: +dmg faster' },
         { cost: 100, dmg: 1.3, recharge: 0.28, pSize: 10, label: 'Lv3: bullet storm' },
+        { cost: 160, dmg: 2.0, recharge: 0.18, pSize: 11, label: 'Lv4: gatling' },
+        { cost: 240, dmg: 3.0, recharge: 0.10, pSize: 12, label: 'Lv5: minigun' },
     ],
     [TOWER.ICE]: [
         {
             cost: 65,
-            dmg: 0.8,
-            aoe: 100,
+            dmg: 0.8, aoe: 100,
             status: { type: STATUS.SLOW, duration: 3.5, factor: 0.25 },
             label: 'Lv2: bigger freeze',
         },
         {
             cost: 115,
-            dmg: 1.2,
-            aoe: 130,
+            dmg: 1.2, aoe: 130,
             status: { type: STATUS.SLOW, duration: 5.0, factor: 0.12 },
             label: 'Lv3: deep freeze',
+        },
+        {
+            cost: 180,
+            dmg: 2.0, aoe: 160,
+            status: { type: STATUS.SLOW, duration: 6.5, factor: 0.08 },
+            label: 'Lv4: permafrost',
+        },
+        {
+            cost: 270,
+            dmg: 3.0, aoe: 200,
+            status: { type: STATUS.SLOW, duration: 8.0, factor: 0.04 },
+            label: 'Lv5: absolute zero',
         },
     ],
     [TOWER.FIRE]: [
         {
             cost: 70,
-            dmg: 1.5,
-            aoe: 70,
+            dmg: 1.5, aoe: 70,
             status: { type: STATUS.BURN, duration: 4.5, dps: 2.5 },
             label: 'Lv2: hotter burn',
         },
         {
             cost: 125,
-            dmg: 2.5,
-            aoe: 90,
+            dmg: 2.5, aoe: 90,
             status: { type: STATUS.BURN, duration: 6.0, dps: 4.5 },
             label: 'Lv3: inferno',
         },
+        {
+            cost: 190,
+            dmg: 4.0, aoe: 115,
+            status: { type: STATUS.BURN, duration: 7.0, dps: 7.0 },
+            label: 'Lv4: wildfire',
+        },
+        {
+            cost: 280,
+            dmg: 6.0, aoe: 145,
+            status: { type: STATUS.BURN, duration: 8.5, dps: 11.0 },
+            label: 'Lv5: supernova',
+        },
     ],
 };
-const MAX_TOWER_LEVEL = 3;
+const MAX_TOWER_LEVEL = 5;
 
 // ── State ─────────────────────────────────────────────────────
 let gold = 150,
@@ -213,6 +239,7 @@ let selectedType = TOWER.ARCHER;
 let activeShooter = null;
 let isAiming = false,
     dragPos = null;
+let isDragging = false; // true while dragging a tower from the shop
 let timeScale = 1,
     shakeAmt = 0,
     slShotCD = 0;
@@ -491,9 +518,23 @@ const ghostGfx = new PIXI.Graphics();
 slotLayer.addChild(ghostGfx);
 let ghostPos = null; // world coords of current hover position
 
+// Drag icon — tower sprite that follows the pointer during shop drag (screen space)
+const dragIcon = new PIXI.Graphics();
+dragIcon.visible = false;
+dragIcon.alpha = 0.55;
+uiLayer.addChild(dragIcon);
+
+function updateDragIcon(type, sx, sy) {
+    dragIcon.clear();
+    drawTowerIcon(dragIcon, TDEFS[type], type);
+    dragIcon.x = sx;
+    dragIcon.y = sy;
+    dragIcon.visible = true;
+}
+
 function updateGhost(wx, wy) {
     ghostGfx.clear();
-    if (phase !== PHASE.BUILD || isAiming || gameOver) {
+    if (isAiming || gameOver || !isDragging) {
         ghostPos = null;
         return;
     }
@@ -501,16 +542,13 @@ function updateGhost(wx, wy) {
     const valid = canPlaceTower(wx, wy);
     const canAfford = gold >= TDEFS[selectedType].cost;
     const ok = valid && canAfford;
-    ghostGfx.lineStyle(2, ok ? 0x88ff44 : 0xff3322, 0.9);
-    ghostGfx.beginFill(ok ? 0x44aa22 : 0xff2200, 0.22);
-    ghostGfx.drawCircle(wx, wy, 28);
-    ghostGfx.endFill();
+    // Only show validity ring, no fill — drag icon already shows the tower
+    ghostGfx.lineStyle(3, ok ? 0x88ff44 : 0xff3322, 0.9);
+    ghostGfx.drawCircle(wx, wy, 30);
     if (!valid) {
         ghostGfx.lineStyle(2.5, 0xff3322, 0.9);
-        ghostGfx.moveTo(wx - 12, wy - 12);
-        ghostGfx.lineTo(wx + 12, wy + 12);
-        ghostGfx.moveTo(wx + 12, wy - 12);
-        ghostGfx.lineTo(wx - 12, wy + 12);
+        ghostGfx.moveTo(wx - 14, wy - 14); ghostGfx.lineTo(wx + 14, wy + 14);
+        ghostGfx.moveTo(wx + 14, wy - 14); ghostGfx.lineTo(wx - 14, wy + 14);
     }
 }
 
@@ -578,6 +616,28 @@ function drawWaveBtn(hover) {
 }
 drawWaveBtn(false);
 
+// Draw tower icon identical to in-game look — centered at (0,0), barrel pointing up
+function drawTowerIcon(g, def, type) {
+    // Shadow
+    g.beginFill(0x000000, 0.28); g.drawEllipse(5, 6, 26, 14); g.endFill();
+    // Outer base plate
+    g.lineStyle(3, 0x334455, 0.55); g.beginFill(0x1a1a2e); g.drawCircle(0, 0, 24); g.endFill();
+    // Colored body
+    g.lineStyle(1.5, def.accent, 0.6); g.beginFill(def.color); g.drawCircle(0, 0, 19); g.endFill();
+    // Accent inner ring
+    g.lineStyle(2, def.accent, 0.75); g.drawCircle(0, 0, 10); g.lineStyle(0);
+    // Centre emblem
+    g.beginFill(0xffffff, 0.5); g.drawCircle(0, 0, 5); g.endFill();
+    g.beginFill(def.accent); g.drawCircle(0, 0, 3); g.endFill();
+    // Barrel pointing up
+    const isCannon = type === TOWER.CANNON;
+    const bLen = isCannon ? 30 : 24;
+    g.lineStyle(isCannon ? 8 : 5, def.accent, 0.95);
+    g.moveTo(0, 0); g.lineTo(0, -bLen);
+    g.lineStyle(0);
+    g.beginFill(def.accent, 0.8); g.drawCircle(0, -bLen, isCannon ? 5 : 3); g.endFill();
+}
+
 const SHOP_TYPES = Object.keys(TDEFS);
 const shopBtns = [];
 // Portrait 2-row shop: row1=[Archer,Cannon,Rapid] row2=[Ice,Fire]
@@ -593,7 +653,10 @@ SHOP_TYPES.forEach((type, i) => {
     btn.cursor = 'pointer';
     btn.on('pointerdown', (e) => {
         e.stopPropagation();
+        if (gameOver) return;
         selectedType = type;
+        isDragging = true;
+        updateDragIcon(type, e.global.x, e.global.y);
         refreshShop();
     });
     btn.on('pointerover', () => {
@@ -602,20 +665,19 @@ SHOP_TYPES.forEach((type, i) => {
     btn.on('pointerout', () => drawShopBtn(btn, type, selectedType === type, false));
     const bg = new PIXI.Graphics();
     btn.addChild(bg);
-    const sw = new PIXI.Graphics();
-    sw.beginFill(def.color);
-    sw.drawRoundedRect(0, 0, 24, 24, 4);
-    sw.endFill();
-    sw.x = 8;
-    sw.y = 9;
-    btn.addChild(sw);
+    const icon = new PIXI.Graphics();
+    drawTowerIcon(icon, def, type);
+    icon.scale.set(0.6);   // 24px radius * 0.6 = ~29px diameter fits in 60px button
+    icon.x = 20;           // center of ~40px icon area (24*0.6 = ~14px radius → center at 14+6=20)
+    icon.y = 36;           // vertical center of 60px button + barrel offset
+    btn.addChild(icon);
     const lbl = new PIXI.Text(`${def.name}\n${def.label}`, {
         fontFamily: 'Arial,sans-serif',
         fontSize: 11,
         fill: 0xffffff,
         lineHeight: 15,
     });
-    lbl.x = 40;
+    lbl.x = 38;
     lbl.y = 9;
     btn.addChild(lbl);
     uiLayer.addChild(btn);
@@ -945,8 +1007,10 @@ class Enemy {
         this.wpIdx = 0; // current path waypoint index
         this.dirX = 0;
         this.dirY = 1; // initial direction: moving down
-        this.hp = d.hp;
-        this.maxHp = d.hp;
+        // HP scales up every 2 waves: +8% per wave pair (e.g. wave 4 = +16%)
+        const hpMult = 1 + Math.floor(waveNum / 2) * 0.08;
+        this.hp = d.hp * hpMult;
+        this.maxHp = this.hp;
         this.spd = d.spd;
         this.reward = d.reward;
         this.color = d.color;
@@ -1609,7 +1673,7 @@ function startWave() {
     spawnFloatText(`Wave ${waveNum}!`, W / 2, H / 2 - 80, 0xff8844);
 }
 function onGroundClick(wx, wy) {
-    if (gameOver || phase !== PHASE.BUILD) return;
+    if (gameOver) return;
     if (!canPlaceTower(wx, wy)) {
         spawnFloatText("Can't build here!", wx, wy - 30, 0xff4444);
         return;
@@ -1738,14 +1802,10 @@ function onTowerDown(tower) {
     startAim(tower);
 }
 
-// Stage pointerdown — slingshot disabled; towers intercept their own events
-app.stage.on('pointerdown', (e) => {
+// Stage pointerdown — towers intercept their own pointerdown for aiming
+app.stage.on('pointerdown', () => {
     if (gameOver || isAiming) return;
     AC.resume();
-    if (phase === PHASE.BUILD) {
-        const p = toWorld(e.global.x, e.global.y);
-        onGroundClick(p.x, p.y);
-    }
     /* SLINGSHOT DISABLED — restore by uncommenting
     const p = toWorld(e.global.x, e.global.y);
     const dx = p.x - SL_ANCHOR.x, dy = p.y - SL_ANCHOR.y;
@@ -1756,6 +1816,7 @@ app.stage.on('pointerdown', (e) => {
 app.stage.on('pointermove', (e) => {
     const p = toWorld(e.global.x, e.global.y);
     if (isAiming) dragPos = p;
+    if (isDragging) updateDragIcon(selectedType, e.global.x, e.global.y);
     updateGhost(p.x, p.y);
     // Collect coins by dragging/hovering over them
     for (let i = coins.length - 1; i >= 0; i--) {
@@ -1766,10 +1827,21 @@ app.stage.on('pointermove', (e) => {
         if (dx * dx + dy * dy < 30 * 30) c.collect();
     }
 });
-app.stage.on('pointerup', () => onUp());
-app.stage.on('pointerupoutside', () => onUp());
+app.stage.on('pointerup', (e) => onUp(e));
+app.stage.on('pointerupoutside', (e) => onUp(e));
 
-function onUp() {
+function onUp(e) {
+    // ── Drag-and-drop tower placement ──
+    if (isDragging) {
+        isDragging = false;
+        ghostGfx.clear();
+        dragIcon.visible = false;
+        if (e && !gameOver) {
+            const p = toWorld(e.global.x, e.global.y);
+            onGroundClick(p.x, p.y);
+        }
+        return;
+    }
     if (!isAiming) return;
     isAiming = false;
     timeScale = 1;
