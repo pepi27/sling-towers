@@ -6,7 +6,7 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      background: #0a0015;
+      background: #050d03;
       display: flex;
       justify-content: center;
       align-items: center;
@@ -15,47 +15,20 @@
       user-select: none;
     }
     #game-container { position: relative; }
-    #hud {
-      position: absolute;
-      top: 16px;
-      left: 20px;
-      color: #fff;
-      font-family: 'Arial Black', Arial, sans-serif;
-      pointer-events: none;
-      z-index: 10;
-    }
-    #score { font-size: 22px; text-shadow: 0 0 10px rgba(255,200,0,0.8); }
-    #shots { font-size: 16px; margin-top: 4px; opacity: 0.85; }
-    #hint {
-      position: absolute;
-      bottom: 18px;
-      left: 50%;
-      transform: translateX(-50%);
-      color: rgba(255,255,255,0.5);
-      font-family: Arial, sans-serif;
-      font-size: 13px;
-      pointer-events: none;
-      z-index: 10;
-    }
     #slow-overlay {
       position: absolute;
       inset: 0;
-      background: radial-gradient(ellipse at center, transparent 40%, rgba(0,60,180,0.35) 100%);
+      background: radial-gradient(ellipse at center, transparent 35%, rgba(0,40,160,0.4) 100%);
       pointer-events: none;
       opacity: 0;
-      transition: opacity 0.15s;
+      transition: opacity 0.12s;
       z-index: 5;
     }
   </style>
 </head>
 <body>
   <div id="game-container">
-    <div id="hud">
-      <div id="score">Score: 0</div>
-      <div id="shots">Shots: 5</div>
-    </div>
     <div id="slow-overlay"></div>
-    <div id="hint">Drag the slingshot to aim &bull; Release to fire</div>
   </div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.3.2/pixi.min.js"></script>
   <script src="index.js"></script>
